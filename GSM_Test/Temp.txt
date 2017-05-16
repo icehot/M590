@@ -1,0 +1,97 @@
+AT+CNMI=2,1,0,0,0 \r
+AT+CMGR=3 \r
+
++CMGR: "REC UNREAD","Credit Info","","17/05/05,09:43:04+18"
+Ai 4.2 Euro credit activ pana la 12/06/2017 inclusiv .
+
++40745662769
+
+m590ResponseCode M590::readForAsyncResponse(const char *progmemResponseString, const unsigned int timeout) {
+    if (_asyncStartTime == 0)
+        _asyncStartTime = millis();
+    if (!_asyncProgmemResponseString && progmemResponseString) 
+    {
+        //save responseString pointer to look for in private variable (so async function can be called without parameters)
+        _asyncProgmemResponseString = progmemResponseString;
+        _asyncResponseLength = strlen_P(progmemResponseString);
+    } else if (!_asyncProgmemResponseString && !progmemResponseString)
+    {
+        //return when function is called for the first time without any parameters
+        return M590_NO_PARAMETERS;
+    }
+
+    if (millis() > _asyncStartTime + timeout)
+    {
+        resetAsyncVariables();
+        return M590_TIMEOUT;
+    }
+
+    while (_gsmSerial->available()) {
+        char c = (char) _gsmSerial->read();
+        if (c == pgm_read_byte_near(_asyncProgmemResponseString + _asyncBytesMatched)) {
+            _asyncBytesMatched++;
+            if (_asyncBytesMatched == _asyncResponseLength) {
+                resetAsyncVariables();
+                return M590_SUCCESS;
+            }
+        } else
+            _asyncBytesMatched = 0;
+    }
+    return M590_ASYNC_RUNNING;
+}
+
+m590ResponseCode M590::readForSMS_Async(const char *progmemResponseString, const unsigned int timeout) {
+
+    if (_asyncStartTime == 0)
+        _asyncStartTime = millis();
+    if (!_asyncProgmemResponseString && progmemResponseString)
+    {
+        //save responseString pointer to look for in private variable (so async function can be called without parameters)
+        _asyncProgmemResponseString = progmemResponseString;
+        _asyncResponseLength = strlen_P(progmemResponseString);
+    }
+    else if (!_asyncProgmemResponseString && !progmemResponseString)
+    {
+        //return when function is called for the first time without any parameters
+        return M590_NO_PARAMETERS;
+    }
+
+    if (millis() > _asyncStartTime + timeout)
+    {
+        resetAsyncVariables();
+        return M590_TIMEOUT;
+    }
+
+    while (_gsmSerial->available()) {
+        char c = (char)_gsmSerial->read();
+
+        _smsBuffer[_asyncResponseIndex++] = c;
+
+        if (_asyncResponseIndex >= (_smsBufferSize - 1))
+        { //if read more than buffehr size
+            _smsBuffer[_asyncResponseIndex] = 0;
+            resetAsyncVariables();
+            return M590_LENGTH_EXCEEDED;
+        }
+
+        if (c == pgm_read_byte_near(_asyncProgmemResponseString + _asyncBytesMatched)) {
+            _asyncBytesMatched++;
+            if (_asyncBytesMatched == _asyncResponseLength) {
+
+                /* Remove the:
+                \r\n\r\nOK\r\n from the end of the buffer */
+              
+                for (int i = 0; i <= strlen_P(_asyncProgmemResponseString); i++)
+                {
+                    _smsBuffer[_asyncResponseIndex-i] = 0;
+                }
+
+                resetAsyncVariables();
+                return M590_SUCCESS;
+            }
+        }
+        else
+            _asyncBytesMatched = 0;
+    }
+    return M590_ASYNC_RUNNING;
+}

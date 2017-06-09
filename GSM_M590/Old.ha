@@ -10,10 +10,11 @@ by Leandro Späth
 #include <SoftwareSerial.h>
 
 #define COMMAND_TIMEOUT 1000
+#define LONG_TIMEOUT 10000
 #define ASYNC_TIMEOUT   60000
 #define STATUS_POLLING_RATE 250
 
-//#define DEBUG
+#define DEBUG
 
 #ifdef DEBUG
 #define MONITOR(a) _debugSerial->print(a);
@@ -108,6 +109,8 @@ public:
 
     int available();
 
+    bool connected();
+
     char read();
 
     void write(const char c);
@@ -119,6 +122,8 @@ public:
     void loop();
 
     bool checkAlive(void(*callback)(void) = NULL);
+
+    bool isAlive();
 
     bool checkPinRequired();
 
@@ -189,6 +194,8 @@ private:
     unsigned int _asyncResponseIndex = 0;
     bool _newSMSArrived = false;
 
+
+    bool restart();
 
     void sendCommandWithoutPrefix(const char *progmemCommand,
                                   const char *params = NULL);
@@ -276,6 +283,7 @@ private:
 };
 
 #endif
+
 
 /* void _handleReturn(String retStr); //handle an async answer from the module
      void _parseReturn(char c);

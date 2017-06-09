@@ -1,4 +1,6 @@
+#include "Gsm.h"
 #include "M590.h"
+#include "Fifo.h"
 
 M590 gsm;
 bool entered = false;
@@ -10,6 +12,22 @@ char smsSender[16];
 char smsDate[24];
 
 unsigned long int start;
+
+
+
+void setup()
+{
+    Serial.begin(115200);
+
+    Serial.println(F("\n\n>> M590 connectCellular example <<"));
+    gsm.begin(115200, &Serial3); //connect to M590 with 115200 baud, Serial3 uart port
+    gsm.enableDebugSerial(&Serial); //optionally output debug information on Serial
+    gsm.initialize(""); //enter your PIN here, leave empty for no pin
+}
+
+void loop()
+{
+}
 
 void notificationCMGR()
 {
@@ -86,21 +104,23 @@ void newSMSnotification( byte index)
     }
 }
 
-void setup()
+void setup2()
 {
     Serial.begin(115200);
+
     Serial.println(F("\n\n>> M590 connectCellular example <<"));
     gsm.begin(115200, &Serial3); //connect to M590 with 115200 baud, Serial3 uart port
     gsm.enableDebugSerial(&Serial); //optionally output debug information on Serial
     gsm.initialize(""); //enter your PIN here, leave empty for no pin
 }
 
-void loop()
+void loop2()
 {
     gsm.loop(); //the loop method needs to be called often
 
-    if ((millis() > 3000) && (entered == false))
+    if ((gsm.connected()) && (entered == false))
     {
+
         /* Sync commands*/
 
         if(gsm.setSMSTextModeCharSetGSM())
@@ -111,6 +131,8 @@ void loop()
         {
             Serial.println(F("CMGF or CSCS Error"));
         }
+
+        delay(1350);
 
         /* Deleta all sms from storage */
 

@@ -15,16 +15,37 @@
     </Filter>
   </ItemGroup>
   <ItemGroup>
-    <None Include="GSM_Test.ino" />
+    <None Include="GSM_M590.ino" />
   </ItemGroup>
   <ItemGroup>
-    <ClInclude Include="__vm\.GSM_Test.vsarduino.h">
+    <ClInclude Include="__vm\.GSM_M590.vsarduino.h">
       <Filter>Header Files</Filter>
+    </ClInclude>
+    <ClInclude Include="Fifo.h">
+      <Filter>Header Files</Filter>
+    </ClInclude>
+    <ClInclude Include="M590.h">
+      <Filter>Header Files</Filter>
+    </ClInclude>
+    <ClInclude Include="Old.ha">
+      <Filter>Resource Files</Filter>
     </ClInclude>
   </ItemGroup>
   <ItemGroup>
-    <Text Include="Temp.txt">
+    <ClCompile Include="M590_Init.cpp">
+      <Filter>Source Files</Filter>
+    </ClCompile>
+    <ClCompile Include="M590_Core.cpp">
+      <Filter>Source Files</Filter>
+    </ClCompile>
+    <ClCompile Include="M590_Util.cpp">
+      <Filter>Source Files</Filter>
+    </ClCompile>
+    <ClCompile Include="M590_Api.cpp">
+      <Filter>Source Files</Filter>
+    </ClCompile>
+    <ClCompile Include="Old.ce">
       <Filter>Resource Files</Filter>
-    </Text>
+    </ClCompile>
   </ItemGroup>
 </Project>

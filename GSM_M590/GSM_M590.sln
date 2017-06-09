@@ -3,9 +3,7 @@ Microsoft Visual Studio Solution File, Format Version 12.00
 # Visual Studio 2013
 VisualStudioVersion = 12.0.40629.0
 MinimumVisualStudioVersion = 10.0.40219.1
-Project("{8BC9CEB8-8B4A-11D0-8D11-00A0C91BC942}") = "ESP_GSM", "ESP_GSM.vcxproj", "{C5F80730-F44F-4478-BDAE-6634EFC2CA88}"
-EndProject
-Project("{8BC9CEB8-8B4A-11D0-8D11-00A0C91BC942}") = "GSM_Test", "..\GSM_Test\GSM_Test.vcxproj", "{841E9008-7BE2-4FF8-AED6-1CB1FECD047E}"
+Project("{8BC9CEB8-8B4A-11D0-8D11-00A0C91BC942}") = "GSM_M590", "GSM_M590.vcxproj", "{C5F80730-F44F-4478-BDAE-6634EFC2CA88}"
 EndProject
 Global
 	GlobalSection(SolutionConfigurationPlatforms) = preSolution
@@ -17,10 +15,6 @@ Global
 		{C5F80730-F44F-4478-BDAE-6634EFC2CA88}.Debug|Win32.Build.0 = Debug|Win32
 		{C5F80730-F44F-4478-BDAE-6634EFC2CA88}.Release|Win32.ActiveCfg = Release|Win32
 		{C5F80730-F44F-4478-BDAE-6634EFC2CA88}.Release|Win32.Build.0 = Release|Win32
-		{841E9008-7BE2-4FF8-AED6-1CB1FECD047E}.Debug|Win32.ActiveCfg = Debug|Win32
-		{841E9008-7BE2-4FF8-AED6-1CB1FECD047E}.Debug|Win32.Build.0 = Debug|Win32
-		{841E9008-7BE2-4FF8-AED6-1CB1FECD047E}.Release|Win32.ActiveCfg = Release|Win32
-		{841E9008-7BE2-4FF8-AED6-1CB1FECD047E}.Release|Win32.Build.0 = Release|Win32
 	EndGlobalSection
 	GlobalSection(SolutionProperties) = preSolution
 		HideSolutionNode = FALSE

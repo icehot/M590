@@ -24,7 +24,24 @@ const char
         M590_COMMAND_SET_MODEM_TEXT_MODE[]      PROGMEM = "CMGF=1",
         M590_COMMAND_USSD_START[]               PROGMEM = "CUSD=1,\"",
         M590_COMMAND_USSD_END[]                 PROGMEM = "\",15",
-        M590_COMMAND_SMS_NOTIFICATION[]         PROGMEM = "CNMI=2,1,0,0,0";
+        M590_COMMAND_SMS_NOTIFICATION[]         PROGMEM = "CNMI=2,1,0,0,0",
+        M590_COMMAND_CFUN[]                     PROGMEM = "CFUN=";
+
+enum commandID{
+    M590_COMMAND_ID_GET_SIM_IDENTIFICATION = 0,
+    M590_COMMAND_ID_CHECK_STATUS,
+    M590_COMMAND_ID_CHECK_NETWORK_STATUS
+};
+
+
+typedef  const char * PROGMEM CommandPtrType;
+
+CommandPtrType const commandTable[3] =
+{
+    M590_COMMAND_GET_SIM_IDENTIFICATION,
+    M590_COMMAND_CHECK_STATUS,
+    M590_COMMAND_CHECK_NETWORK_STATUS
+};
 
 
 const char
@@ -42,7 +59,9 @@ M590_RESPONSE_PIN_DONE[]        PROGMEM = " READY",
 M590_RESPONSE_PIN_VAL_DONE[]    PROGMEM = "+PBREADY",
 M590_RESPONSE_CMTI[]            PROGMEM = "+CMTI: \"SM\",",
 M590_RESPONSE_SMS_END[]         PROGMEM = "\r\n\r\nOK\r\n",
-M590_RESPONSE_CMGR[]            PROGMEM = "+CMGR: \"";
+M590_RESPONSE_CMGR[]            PROGMEM = "+CMGR: \"",
+M590_RESPONSE_STARTUP[]         PROGMEM = "MODEM:STARTUP",
+M590_RESPONSE_READY[]           PROGMEM = "+PBREADY";
 
 const char
         M590_AT[]                       PROGMEM = "AT",
@@ -124,6 +143,43 @@ void M590::print(const String s) {
     _gsmSerial->print(s);
 }
 
+bool M590::restart(){
+
+    sendCommand(M590_COMMAND_CFUN,"15");
+
+    if (readForResponses(M590_RESPONSE_OK,M590_RESPONSE_ERROR,10000) == M590_SUCCESS)
+    {
+        printDebug(F("RESTART initiated"));
+        if (readForResponses(M590_RESPONSE_STARTUP, M590_RESPONSE_ERROR, 10000) == M590_SUCCESS)
+        {
+            printDebug(F("MODEM started up"));
+
+            if (readForResponses(M590_RESPONSE_READY, M590_RESPONSE_ERROR, 20000) == M590_SUCCESS)
+            {
+                printDebug(F("MODEM Ready"));
+                return true;
+            }
+            else
+            {
+                printDebug(F("Failed at READY"));
+                return false;
+            }
+        }
+        else
+        {
+            printDebug(F("Failed at STARTUP"));
+            return false;
+        }
+    }
+    else
+    {
+        printDebug(F("Failed at CFUN"));
+        return false;
+    }
+
+    return false;
+}
+
 
 bool M590::initialize(String pin) {
     
@@ -133,6 +189,16 @@ bool M590::initialize(String pin) {
     _IdleTask = &handlerGateway;
     _handlerCbk = _IdleTask;
 
+    if (restart())
+    {
+        printDebug(F("Succesfull Restart"));
+    }
+    else
+    {
+        printDebug(F("Failed Restart"));
+    }
+    
+    /*
     if (!checkAlive()) {//checkAlive still gets executed
         printDebug(M590_ERROR_NOT_RESPONDING); //TODO: better error handling
         return false;
@@ -158,6 +224,9 @@ bool M590::initialize(String pin) {
         _currentState = M590_STATE_FATAL_ERROR;
         printDebug(M590_ERROR_WRONG_PIN);
     }
+    */
+
+    _currentState = M590_STATE_CELLULAR_CONNECTED;
 }
 
 
@@ -229,6 +298,26 @@ bool M590::checkAlive(void(*callback)(void)) {
         } else
             return false;
     } else return false;
+}
+
+bool M590::isAlive() 
+{
+    m590ResponseCode response;
+        sendCommandWithoutPrefix(M590_AT);
+
+        response = readForAsyncResponse(M590_RESPONSE_OK);
+        if (M590_SUCCESS == response)
+        {
+            return true;
+        }
+        else if (M590_ASYNC_RUNNING == response)
+        {
+            //printDebug(F("."),false);
+        }
+        else{
+            printDebug("CUSD Error");
+            returnToIdle();
+        }
 }
 
 bool M590::checkPinRequired() {
@@ -626,6 +715,7 @@ bool M590::disableNewSMSNotification()
     {
         if (_commandState == M590_STATE_IDLE)
         {
+            /*@Todo: Disable the notification */
 
             /* Assign new SMS notification Callback */
             _newSMSnotificationCbk = NULL;
@@ -806,6 +896,18 @@ bool M590::sendUSSD(const char * ussdString)
     }
 
     return true;
+}
+
+bool M590::connected()
+{
+    if (_currentState == M590_STATE_CELLULAR_CONNECTED)
+    {
+        return true;
+    }
+    else
+    {
+        return false;
+    }
 }
 
 bool M590::SendUSSD_Async(const char * ussdString, void (*notificationCbk)())
@@ -1291,7 +1393,7 @@ M590::readForResponses(const char *progmemResponseString, const char *progmemFai
                 passMatched = 0;
 
             //check for fail
-            if (c == pgm_read_byte_near(progmemResponseString + failMatched)) {
+            if (c == pgm_read_byte_near(progmemFailString + failMatched)) {
                 failMatched++;
                 if (failMatched == failResponseLength) {
                     return M590_FAILURE;

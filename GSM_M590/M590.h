@@ -10,7 +10,7 @@
 #endif
 
 #include "Fifo.h"
-#define MONITOR_M590
+//#define MONITOR_M590
 
 #ifdef MONITOR_M590
 #define MONITOR(a) if(_debugSerial) _debugSerial->print(a);
@@ -34,16 +34,27 @@ typedef enum {
     M590_RESPONSE_SUCCESS = 2,
     M590_RESPONSE_TIMEOUT = 3,
     M590_RESPONSE_LENGTH_EXCEEDED = 4,
-    M590_RESPONSE_FAILURE = 5
+    M590_RESPONSE_FAILURE = 5,
+    M590_RESPONSE_PREPARE_IDLE
 }ResponseStateType;
+
+typedef enum {
+    M590_RES_NULL,
+    M590_RES_CSQ,
+    M590_RES_SMS,
+    M590_RES_PARSED_SMS
+}ResultType;
 
 typedef struct {
     const char* command;
     String parameter;
     const char* response;
-    char* responebuffer;
+    char* responebuffer = NULL;
+    byte responsebufferSize = 0;
     void(*commandCbk)(ResponseStateType response) = NULL;
     unsigned long timeout = ASYNC_TIMEOUT;
+    ResultType resultType = M590_RES_NULL;
+    void* resultptr;
 }CommandType;
 
 typedef enum {
@@ -77,6 +88,18 @@ typedef enum  {
     M590_NET_PARSE_ERROR, //not actually part of response, used to determine function failure
 }NetworkStateType;
 
+typedef enum {
+    M590_SMS_DEL_REC_NR,
+    M590_SMS_DEL_ALL_READ,
+    M590_SMS_DEL_ALL_READ_SENT,
+    M590_SMS_DEL_ALL_READ_SENT_UNSENT,
+    M590_SMS_DEL_ALL
+}DeleteFlagType;
+
+typedef struct{
+    byte rssi;
+    byte ber;
+}M590_CSQResultType;
 
 
 const char
@@ -88,7 +111,8 @@ M590_COMMAND_GET_SIGNAL_STRENGTH[]      PROGMEM = "AT+CSQ",
 M590_COMMAND_SET_MODEM_GSM_CHARSET[]    PROGMEM = "AT+CSCS=\"GSM\"",
 M590_COMMAND_SET_MODEM_TEXT_MODE[]      PROGMEM = "AT+CMGF=1",
 M590_COMMAND_USSD_START[]               PROGMEM = "AT+CUSD=1,\"",
-M590_COMMAND_USSD_END[]                 PROGMEM = "\",15", 
+M590_COMMAND_USSD_END[]                 PROGMEM = "\",15",
+M590_COMMAND_SMS_DELETE[]               PROGMEM = "AT+CMGD=",
 
 M590_RESPONSE_PREFIX[]                  PROGMEM = "+",
 M590_RESPONSE_PIN_REQUIRED[]            PROGMEM = " SIM PIN",
@@ -111,44 +135,68 @@ M590_ERROR_UNHANDLED_NET_STATE[]             PROGMEM = "\n#M590: Network status 
 M590_ERROR_INIT_TIMEOUT[]                    PROGMEM = "\n#M590: Initialization Timeout",
 M590_ERROR_RESPONSE_TIMEOUT[]                PROGMEM = "\n#M590: Response Timeout",
 M590_ERROR_RESPONSE_LENGTH_EXCEEDED[]        PROGMEM = "\n#M590: Response Lenght exceeded",
-M590_ERROR_INVALID_STATE_STATE[]             PROGMEM = "\n#M590: Invalid State";
+M590_ERROR_RESPONSE_INCOMPLETE[]             PROGMEM = "\n#M590: Incomplete Response",
+M590_ERROR_INVALID_STATE[]                   PROGMEM = "\n#M590: Invalid State";
 
 class M590
 {
     public:
+        /* Constructor */
         M590();
+
+        /* Initialization API-s*/
         bool enableDebugSerial(HardwareSerial *debugSerial);
         bool init(unsigned long baudRate, HardwareSerial *gsmSerial, char* pin = "");
         bool waitForNetWork(const unsigned int timeout = SEARCH_FOR_NETWORK_TIMEOUT);
 
+        /* Public API-s */
         void process();
         bool checkAlive(void(*commandCbk)(ResponseStateType response) = NULL);
-        bool getSignalStrength(byte* rssi, byte* ber);
+        bool getSignalStrength(M590_CSQResultType * csq, void(*commandCbk)(ResponseStateType response) = NULL);
         bool setSMSTextModeCharSetGSM(void(*commandCbk)(ResponseStateType response) = NULL);
         bool sendUSSD(char * ussdString, void(*commandCbk)(ResponseStateType response) = NULL);
+        bool deleteSMS(byte index, DeleteFlagType deleteFlag, void(*commandCbk)(ResponseStateType response) = NULL);
 
     private:
+        /* Serial port handlers */
         HardwareSerial *_gsmSerial = NULL;
         HardwareSerial *_debugSerial = NULL;
-        Fifo<CommandType> _commandFifo;
-        ModemStateType _gsmState = M590_MODEM_IDLE;
-        ResponseStateType _responseState = M590_RESPONSE_IDLE;
-        NetworkStateType _networkState = M590_NET_NOT_REGISTERED_NOT_SEARCHING;
 
+        /* Internal storage variables */
+        Fifo<CommandType> _commandFifo;
+        char _internalBuffer[16];
+
+        /* Internal state variables */
+        ModemStateType _gsmState = M590_MODEM_IDLE;
         InitStateType _initState = M590_UNINITIALIZED;
+        NetworkStateType _networkState = M590_NET_NOT_REGISTERED_NOT_SEARCHING;
+        ResponseStateType _responseState = M590_RESPONSE_IDLE;
+
+        /* Internal variables for asynchronous response handling */
         unsigned long _asyncStartTime = 0;
         unsigned long _asyncTimeout = 0;
         const char *_asyncProgmemResponseString = NULL;
         byte _asyncResponseLength = 0;
         byte _asyncBytesMatched = 0;
-        void(*_commandCbk)(ResponseStateType response) = NULL;
-        char _responseBuffer[16];
+        char _asyncSeparator = ':';
+        bool _asyncSeparatorFound = false;
+        byte _asyncResponseIndex;
+        char* _asyncResponseBuffer = NULL;
+        byte _asyncResponseBufferSize = 0;
+        void(*_asyncCommandCbk)(ResponseStateType response) = NULL;
+        ResultType _asyncResultType = M590_RES_NULL;
+        void* _asyncResultptr = NULL;
 
+        /* Internal  handler functions for different results */
+        void processCSQ();
+
+        /* Internal core functions*/
         void resetAsyncVariables();
         void sendCommand(const char *progmemCommand, String params);
-        void readForResponse(const char *progmemResponseString, const unsigned int timeout, void(*commandCbk)(ResponseStateType response));
         void responseHandler();
-
+        void processResult();
+        
+        /* Internal utility functions */
         void printDebug(const char *progmemString, bool withNewline = true);
         void printDebug(const String s, bool withNewline = true );
 

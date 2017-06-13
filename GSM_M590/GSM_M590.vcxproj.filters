@@ -16,6 +16,9 @@
   </ItemGroup>
   <ItemGroup>
     <None Include="GSM_M590.ino" />
+    <None Include="Old.inocska">
+      <Filter>Resource Files</Filter>
+    </None>
   </ItemGroup>
   <ItemGroup>
     <ClInclude Include="__vm\.GSM_M590.vsarduino.h">
@@ -29,6 +32,9 @@
     </ClInclude>
     <ClInclude Include="Old.ha">
       <Filter>Resource Files</Filter>
+    </ClInclude>
+    <ClInclude Include="resource.h">
+      <Filter>Header Files</Filter>
     </ClInclude>
   </ItemGroup>
   <ItemGroup>

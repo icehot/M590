@@ -63,7 +63,7 @@ bool M590::init(unsigned long baudRate, HardwareSerial *gsmSerial, char* pin)
 
                     default:
                         /* Should never reach here */
-                        printDebug(M590_ERROR_INVALID_STATE_STATE);
+                        printDebug(M590_ERROR_INVALID_STATE);
                         break;
                 }
                 
@@ -116,7 +116,7 @@ bool M590::init(unsigned long baudRate, HardwareSerial *gsmSerial, char* pin)
 
             default:
                 /* Should never reach here */
-                printDebug(M590_ERROR_INVALID_STATE_STATE);
+                printDebug(M590_ERROR_INVALID_STATE);
                 break;
         }
     }
@@ -195,8 +195,8 @@ PinStateType M590::checkPinRequired()
     PinStateType retVal = M590_PIN_ERROR;
 
     sendCommand(M590_COMMAND_CHECK_PIN, "");
-    memset(_responseBuffer, 0, sizeof(_responseBuffer));
-    response = readForResponseBufferedSync(M590_RESPONSE_OK, _responseBuffer, sizeof(_responseBuffer));
+    memset(_internalBuffer, 0, sizeof(_internalBuffer));
+    response = readForResponseBufferedSync(M590_RESPONSE_OK, _internalBuffer, sizeof(_internalBuffer));
 
     if (response != M590_RESPONSE_SUCCESS)
     {
@@ -204,14 +204,14 @@ PinStateType M590::checkPinRequired()
         return retVal;
     }
 
-    bool required = bufferStartsWithProgmem(_responseBuffer, M590_RESPONSE_PIN_REQUIRED);
+    bool required = bufferStartsWithProgmem(_internalBuffer, M590_RESPONSE_PIN_REQUIRED);
 
     if (required)
     {
         retVal = M590_PIN_REQUIRED;
     }
 
-    bool alreadyReady = bufferStartsWithProgmem(_responseBuffer, M590_RESPONSE_PIN_NOT_REQUIRED);
+    bool alreadyReady = bufferStartsWithProgmem(_internalBuffer, M590_RESPONSE_PIN_NOT_REQUIRED);
 
     if (alreadyReady)
     {//check if module does not need pin entry
@@ -255,13 +255,13 @@ bool M590::pinValidation()
 NetworkStateType M590::checkNetworkState()
 {
     sendCommand(M590_COMMAND_CHECK_NETWORK_STATUS, "");
-    memset(_responseBuffer, 0, sizeof(_responseBuffer));
+    memset(_internalBuffer, 0, sizeof(_internalBuffer));
 
-    ResponseStateType response = readForResponseBufferedSync(M590_RESPONSE_OK, _responseBuffer, sizeof(_responseBuffer));
+    ResponseStateType response = readForResponseBufferedSync(M590_RESPONSE_OK, _internalBuffer, sizeof(_internalBuffer));
 
     /* the fourth char in the response (e.g. " 0,3") will be the registration state (e.g. 3) */
     if (response == M590_RESPONSE_SUCCESS)
-        return (NetworkStateType)(_responseBuffer[3] - '0'); /* convert to integer, maps to NetworkStateType */
+        return (NetworkStateType)(_internalBuffer[3] - '0'); /* convert to integer, maps to NetworkStateType */
     else
         return M590_NET_PARSE_ERROR;
 }

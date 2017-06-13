@@ -82,11 +82,13 @@
     <None Include="GSM_M590.ino">
       <FileType>CppCode</FileType>
     </None>
+    <None Include="Old.inocska" />
   </ItemGroup>
   <ItemGroup>
     <ClInclude Include="Fifo.h" />
     <ClInclude Include="M590.h" />
     <ClInclude Include="Old.ha" />
+    <ClInclude Include="resource.h" />
     <ClInclude Include="__vm\.GSM_M590.vsarduino.h" />
   </ItemGroup>
   <ItemGroup>

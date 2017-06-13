@@ -74,65 +74,48 @@ bool M590::sendUSSD(char * ussdString, void(*commandCbk)(ResponseStateType respo
     }
 }
 
+bool M590::deleteSMS(byte index, DeleteFlagType deleteFlag, void(*commandCbk)(ResponseStateType response))
+{
+    CommandType c;
+    char parameter[5];
 
-//bool M590::getSignalStrength(void(*commandCbk)(ResponseStateType response, byte* rssi, byte* ber))
-//{
-//    CommandType c;
-//    c.command = M590_COMMAND_GET_SIGNAL_STRENGTH;
-//    c.parameter = "";
-//    c.responebuffer = NULL;
-//    c.response = M590_RESPONSE_OK;
-//    c.commandCbk = commandCbk;
-//
-//    if (_commandFifo.add(c))
-//        return true;
-//    else
-//        return false;
-//
-//    int i;
-//    String tempString = "";
-//
-//    if (_currentState == M590_STATE_CELLULAR_CONNECTED)
-//    {
-//        sendCommand(M590_COMMAND_GET_SIGNAL_STRENGTH);
-//        memset(_responseBuffer, 0, sizeof(_responseBuffer));
-//        if (M590_SUCCESS == readForResponse(M590_RESPONSE_OK, _responseBuffer, sizeof(_responseBuffer)))
-//        {
-//            for (i = 0; (i < sizeof(_responseBuffer)) && (_responseBuffer[i] != ','); i++)
-//            {
-//                tempString += _responseBuffer[i];
-//            }
-//            *rssi = tempString.toInt();
-//            tempString = "";
-//
-//            if (i < sizeof(_responseBuffer))
-//            {
-//                for (++i/*continue after the separator*/; (i < sizeof(_responseBuffer)) && (_responseBuffer[i] != '\0'); i++)
-//                {
-//                    tempString += _responseBuffer[i];
-//                }
-//            }
-//            else
-//            {
-//                printDebug(F("Incomplete response"));
-//                return false;
-//            }
-//
-//            *ber = tempString.toInt();
-//
-//            return true;
-//        }
-//        else
-//        {
-//            printDebug(F("CSQ Error"));
-//            return false;
-//        }
-//
-//    }
-//    else
-//    {
-//        printDebug(F("NOT connected"));
-//        return false;
-//    }
-//}
+    c.command = M590_COMMAND_SMS_DELETE;
 
+    /* Build up the parameter list */
+    sprintf(parameter, "%d", index);
+    strcpy(parameter + strlen(parameter), ",");
+    sprintf(parameter + strlen(parameter), "%d", deleteFlag);
+
+    c.parameter = parameter;
+
+    c.responebuffer = NULL;
+    c.response = M590_RESPONSE_OK;
+    c.commandCbk = commandCbk;
+
+    if (_commandFifo.add(c))
+        return true;
+    else
+        return false;
+}
+
+bool M590::getSignalStrength(M590_CSQResultType* csq, void(*commandCbk)(ResponseStateType response))
+{
+    CommandType c;
+
+    c.command = M590_COMMAND_GET_SIGNAL_STRENGTH;
+    c.parameter = "";
+    c.responebuffer = _internalBuffer;
+    c.responsebufferSize = sizeof(_internalBuffer);
+    c.response = M590_RESPONSE_OK;
+    c.commandCbk = commandCbk;
+    c.resultType = M590_RES_CSQ;
+    if (csq != NULL)
+        c.resultptr = (void*)csq;
+    else
+        return false;
+
+    if (_commandFifo.add(c))
+        return true;
+    else
+        return false;
+}

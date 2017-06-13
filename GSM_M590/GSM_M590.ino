@@ -1,10 +1,18 @@
 #include "M590.h"
 
+/* Global variables*/
 M590 gsm;
+M590_CSQResultType csq;
 
 void commandCbk(ResponseStateType response)
 {
     Serial.print(F("#App: Response: ")); Serial.println(response);
+}
+
+void csqCbk(ResponseStateType response)
+{
+    if (response == M590_RESPONSE_SUCCESS)
+        Serial.print(F("#App: RSSI: ")); Serial.print(csq.rssi); Serial.print(F(" BER: ")); Serial.println(csq.ber);
 }
 
 void setup()
@@ -45,8 +53,11 @@ void setup()
 
     gsm.checkAlive(&commandCbk);
     gsm.setSMSTextModeCharSetGSM(&commandCbk);
-    gsm.sendUSSD("*133#", &commandCbk);
+    gsm.deleteSMS(0, M590_SMS_DEL_ALL, &commandCbk);
+    //gsm.sendUSSD("*133#", &commandCbk);
+    gsm.getSignalStrength(&csq, &csqCbk);
     gsm.checkAlive(&commandCbk);
+    
 }
 
 void loop()

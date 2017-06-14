@@ -58,7 +58,7 @@ void notificationCMGR()
     }
 }
 
-void notificationUSSD()
+void notificationussdCbk()
 {
     Serial.println(F("CUSD notification!"));
 }
@@ -156,13 +156,13 @@ void loop2()
 
         /* Start of asynchronous commands */
         start = millis();
-        if (gsm.SendUSSD_Async("*133#", &notificationUSSD))
+        if (gsm.SendussdCbk_Async("*133#", &notificationussdCbk))
         {
-            Serial.println(F("USSD Sent Succesfully"));
+            Serial.println(F("ussdCbk Sent Succesfully"));
         }
         else
         {
-            Serial.println(F("USSD Error"));
+            Serial.println(F("ussdCbk Error"));
         }
         Serial.print(F("Runtime (ms): ")); Serial.println(millis() - start);
 
@@ -200,13 +200,13 @@ else
 Serial.println(F("SMS Error"));
 }
 
-if (gsm.sendUSSD("*133#"))
+if (gsm.sendussdCbk("*133#"))
 {
-Serial.println(F("USSD Sent Succesfully"));
+Serial.println(F("ussdCbk Sent Succesfully"));
 }
 else
 {
-Serial.println(F("USSD Error"));
+Serial.println(F("ussdCbk Error"));
 }
 
 if (gsm.readSMS(1, smsBuffer, sizeof(smsBuffer)))

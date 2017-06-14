@@ -8,58 +8,7 @@ M590::M590()
     _debugSerial = NULL;
 }
 
-void M590::process()
-{
-    if (_gsmState == M590_MODEM_IDLE)
-    {/* Check for new job */
 
-        if (_commandFifo.getItemCount())
-        {/* There is job in the fifo, process it */
-
-            CommandType c;
-
-            /** Set the gsm state to busy **/
-            _gsmState = M590_MODEM_BUSY;
-
-            /** Get the next element from FIFO **/
-            _commandFifo.remove(&c);
-
-            /** Send out the command **/
-            sendCommand(c.command, c.parameter);
-
-            /** Initialize the asynchronous response reading **/
-
-                /* Start the timeout timer for async reading */
-                _asyncStartTime = millis();
-                /* save responseString pointer to look for in private variable (for responsehandler) */
-                _asyncProgmemResponseString = c.response;
-                _asyncResponseLength = strlen_P(c.response);
-                /* Assign the timeout value */
-                _asyncTimeout = c.timeout;
-                /* Assign the command callback */
-                _asyncCommandCbk = c.commandCbk;
-                /* Assign the responsebuffer and size */
-                _asyncResponseBuffer = c.responebuffer;
-                _asyncResponseBufferSize = c.responsebufferSize;
-                /* Assign the resultType and result pointer */
-                _asyncResultType = c.resultType;
-                _asyncResultptr = c.resultptr;
-
-            /** Start the response reading by setting the M590_RESPONSE_RUNNING state for responshandler() **/
-            _responseState = M590_RESPONSE_RUNNING;
-
-            MONITOR("<< ");
-        }
-        else
-        {/* There is no job in the fifo, idle task can run */
-
-        }
-    }
-    else
-    {/* Process ongoing job*/
-        responseHandler();
-    }
-}
 
 void M590::resetAsyncVariables() {
     _asyncStartTime = 0;
@@ -67,13 +16,11 @@ void M590::resetAsyncVariables() {
     _asyncProgmemResponseString = NULL;
     _asyncResponseLength = 0;
     _asyncBytesMatched = 0;
-    _asyncSeparator = ':'; //@Todo: assign it dinamically
-    _asyncSeparatorFound = false;
-    _asyncResponseIndex = 0;
-    _asyncResponseBuffer = NULL;
-    _asyncResponseBufferSize = 0;
+    _asyncFailMatched = 0;
     _asyncResultType = M590_RES_NULL;
     _asyncResultptr = NULL;
+    _asyncProcessState = 0;
+    _asyncTempString = "";
 }
 
 void M590::sendCommand(const char *progmemCommand, String params) 
@@ -104,52 +51,16 @@ void M590::responseHandler()
     switch (_responseState)
     {
         case M590_RESPONSE_RUNNING:
-            if (millis() > _asyncStartTime + _asyncTimeout)
-            {/* Action for timeout */
-                _responseState = M590_RESPONSE_TIMEOUT;
-                break;
-            }
+            _responseState = readForResponseAsync();
+            break;
 
-            while (_gsmSerial->available())
+        case M590_RESPONSE_FAILURE:
+            printDebug(M590_ERROR_RESPONSE_ERROR);
+            if (_asyncCommandCbk != NULL)
             {
-                /* Get response from Serial port*/
-                char c = (char)_gsmSerial->read();
-                MONITOR(c);
-
-                /* Save the Response if it is requested*/
-                if (_asyncResponseBuffer != NULL)
-                {
-                    if (c == _asyncSeparator)
-                        _asyncSeparatorFound = true;
-                    else
-                    {
-                        if ((_asyncResponseBufferSize - 1) <_asyncResponseIndex)
-                        {
-                            _responseState = M590_RESPONSE_LENGTH_EXCEEDED;
-                        }
-
-                        if (_asyncSeparatorFound)
-                            _asyncResponseBuffer[_asyncResponseIndex++] = c;
-                    }
-                }
-
-                /* Check for the requested response String */
-                if (c == pgm_read_byte_near(_asyncProgmemResponseString + _asyncBytesMatched))
-                {
-                    _asyncBytesMatched++;
-
-                    if (_asyncBytesMatched == _asyncResponseLength)
-                    {
-                        /* Action for success */
-                        _responseState = M590_RESPONSE_SUCCESS;
-                    }
-                }
-                else
-                {
-                    _asyncBytesMatched = 0;
-                }
+                _asyncCommandCbk(M590_RESPONSE_FAILURE);
             }
-
+            _responseState = M590_RESPONSE_PREPARE_IDLE;
             break;
 
         case M590_RESPONSE_TIMEOUT:
@@ -173,12 +84,6 @@ void M590::responseHandler()
         case M590_RESPONSE_SUCCESS:
             MONITOR("<< END");
             MONITOR_NL();
-
-            /* Process the result if applicable */
-            if (_asyncResultType != M590_RES_NULL)
-            {
-                processResult();
-            }
 
             if (_asyncCommandCbk != NULL)
             {
@@ -205,13 +110,85 @@ void M590::responseHandler()
     }
 }
 
-void M590::processResult()
+ResponseStateType M590::readForResponseAsync()
+{
+    if (millis() > _asyncStartTime + _asyncTimeout)
+    {/* Action for timeout */
+        return M590_RESPONSE_TIMEOUT;
+    }
+
+    while (_gsmSerial->available())
+    {
+        /* Get response from Serial port*/
+        char c = (char)_gsmSerial->read();
+        MONITOR(c);
+
+        /* Process the result if applicable */
+        processResult(c);
+
+        /* Check for the requested response String */
+        if (c == pgm_read_byte_near(_asyncProgmemResponseString + _asyncBytesMatched))
+        {
+            _asyncBytesMatched++;
+
+            if (_asyncBytesMatched == _asyncResponseLength)
+            {
+                /* Action for success */
+                return M590_RESPONSE_SUCCESS;
+            }
+        }
+        else
+        {
+            _asyncBytesMatched = 0;
+        }
+        
+        /* Check for ERROR response*/
+        if (c == pgm_read_byte_near(M590_RESPONSE_ERROR + _asyncFailMatched))
+        {
+            _asyncFailMatched++;
+
+            if (_asyncFailMatched == strlen(M590_RESPONSE_ERROR))
+            {
+                return M590_RESPONSE_FAILURE;
+            }
+        }
+        else
+        {
+            _asyncFailMatched = 0;
+        }
+
+    }
+
+    return M590_RESPONSE_RUNNING;
+}
+
+void M590::processResult(char c)
 {
     switch (_asyncResultType)
     {
-        case M590_RES_CSQ:
-            processCSQ();
+        case M590_RES_CUSD:
+            processCUSD(c);
         break;
+
+        case M590_RES_CMGR:
+            processCMGR(c);
+            break;
+
+        case M590_RES_CMGL:
+            processCMGL(c);
+            break;
+
+        case M590_RES_CMGS:
+            processCMGS(c);
+            break;
+
+        case M590_RES_CSQ:
+            processCSQ(c);
+        break;
+
+        case M590_RES_NULL:
+            /* Nothing to process */
+            break;
 
         default:
             /* Invalid Result Type */
@@ -220,33 +197,340 @@ void M590::processResult()
     }
 }
 
-void M590::processCSQ()
+void M590::processCMGS(char c)
 {
-    int i;
-    String tempString = "";
-
-    //@Todo: waits for generalization
-    for (i = 0; (i < _asyncResponseBufferSize) && (_asyncResponseBuffer[i] != ','); i++)
+    switch (_asyncProcessState)
     {
-        tempString += _asyncResponseBuffer[i];
+        case 0: /* Wait for '>' */
+            if (c == '>')
+            {/* Text input character match */
+
+                /* Send the message */
+                _gsmSerial->print((const char *)(_asyncResultptr));
+                
+                /* write terminating character "Ctrl+Z" (0x1A) to finalize the message */
+                _gsmSerial->write(0x1A);
+
+                /* Finish the process*/
+                _asyncProcessState++;
+            }
+            break;
+
+        case 1: /* Process completed */
+            /* Do nothing */
+            break;
+
+        default:
+            printDebug(M590_ERROR_INVALID_STATE);
+            break;
     }
+}
 
-    ((M590_CSQResultType *)_asyncResultptr)->rssi = tempString.toInt();
-    tempString = "";
-    
-    if (i < _asyncResponseBufferSize)
+void M590::processCMGL(char c)
+{
+    switch (_asyncProcessState)
     {
-        for (++i/*continue after the separator*/; (i < sizeof(_asyncResponseBuffer)) && (_asyncResponseBuffer[i] != '\r'); i++)
-        {
-            tempString += _asyncResponseBuffer[i];
+    case 0: /* Wait for separator */
+        if (c == ':')
+        {/* separator and new sms found increase smsCount and go to next phase*/
+            ((M590_SMSList_ResultType *)_asyncResultptr)->smsCount++;
+            _asyncProcessState++;
         }
+        break;
 
-        ((M590_CSQResultType *)_asyncResultptr)->ber = tempString.toInt();
+    case 1: /* Read until '"'  */
+        if (c == '"')
+        {/* Found, go to next phase */
+            _asyncProcessState++;
+        }
+        break;
+
+    case 2: /* Read status until '"' */
+        if (c == '"')
+        {/* process and go to next phase*/
+            _asyncProcessState++;
+        }
+        else
+        {/* Add the character to the temp string */
+            ((M590_SMSList_ResultType *)_asyncResultptr)->smsArray[((M590_SMSList_ResultType *)_asyncResultptr)->smsCount - 1].status += c;
+        }
+        break;
+
+    case 3: /* Read until '"'  */
+        if (c == '"')
+        {/* Found, go to next phase */
+            _asyncProcessState++;
+        }
+        break;
+
+    case 4: /* Read sender until '"' */
+        if (c == '"')
+        {/* process and go to next phase*/
+            _asyncProcessState++;
+        }
+        else
+        {/* Add the character to the temp string */
+            ((M590_SMSList_ResultType *)_asyncResultptr)->smsArray[((M590_SMSList_ResultType *)_asyncResultptr)->smsCount - 1].sender += c;
+        }
+        break;
+
+    case 5: /* Read until '"'  */
+        if (c == '"')
+        {/* Found, go to next phase */
+            _asyncProcessState++;
+        }
+        break;
+
+    case 6: /* Read Empty field until '"'  */
+        if (c == '"')
+        {/* Found, go to next phase*/
+            _asyncProcessState++;
+        }
+        break;
+
+    case 7: /* Read until '"'  */
+        if (c == '"')
+        {/* Found, go to next phase */
+            _asyncProcessState++;
+        }
+        break;
+
+    case 8: /* Read Date until '"' */
+        if (c == '"')
+        {/* process and go to next phase*/
+            _asyncProcessState++;
+        }
+        else
+        {/* Add the character to the temp string */
+            ((M590_SMSList_ResultType *)_asyncResultptr)->smsArray[((M590_SMSList_ResultType *)_asyncResultptr)->smsCount - 1].date += c;
+        }
+        break;
+
+    case 9: /* Read until '\n'  */
+        if (c == '\n')
+        {/* Found, go to next phase */
+            _asyncProcessState++;
+        }
+        break;
+
+    case 10: /* Read Date until '\r' */ //@Todo: Better limitation needed
+        if (c == '\r')
+        {/* process and wait for next SMS by jumping back to beginning */
+            _asyncProcessState = 0;
+        }
+        else
+        {/* Add the character to the temp string */
+            ((M590_SMSList_ResultType *)_asyncResultptr)->smsArray[((M590_SMSList_ResultType *)_asyncResultptr)->smsCount - 1].text += c;
+        }
+        break;
+
+    case 11: /* Process completed */
+        /* Do nothing */
+        break;
+
+    default:
+        printDebug(M590_ERROR_INVALID_STATE);
+        break;
     }
-    else
+}
+
+void M590::processCMGR(char c)
+{
+    switch (_asyncProcessState)
     {
-        printDebug(M590_ERROR_RESPONSE_INCOMPLETE);
-        ((M590_CSQResultType *)_asyncResultptr)->rssi = 0;
-        ((M590_CSQResultType *)_asyncResultptr)->ber = 0;
+    case 0: /* Wait for separator */
+        if (c == ':')
+        {/* separator found go to next phase*/
+
+            _asyncProcessState++;
+        }
+        break;
+
+    case 1: /* Read until '"'  */
+        if (c == '"')
+        {/* Found, go to next phase */
+            _asyncProcessState++;
+        }
+        break;
+
+    case 2: /* Read status until '"' */
+        if (c == '"')
+        {/* process and go to next phase*/
+            _asyncProcessState++;
+        }
+        else
+        {/* Add the character to the temp string */
+            ((M590_SMS_ResultType *)_asyncResultptr)->status += c;
+        }
+        break;
+
+    case 3: /* Read until '"'  */
+        if (c == '"')
+        {/* Found, go to next phase */
+            _asyncProcessState++;
+        }
+        break;
+
+    case 4: /* Read sender until '"' */
+        if (c == '"')
+        {/* process and go to next phase*/
+            _asyncProcessState++;
+        }
+        else
+        {/* Add the character to the temp string */
+            ((M590_SMS_ResultType *)_asyncResultptr)->sender += c;
+        }
+        break;
+
+    case 5: /* Read until '"'  */
+        if (c == '"')
+        {/* Found, go to next phase */
+            _asyncProcessState++;
+        }
+        break;
+
+    case 6: /* Read Empty field until '"'  */
+        if (c == '"')
+        {/* Found, go to next phase*/
+            _asyncProcessState++;
+        }
+        break;
+
+    case 7: /* Read until '"'  */
+        if (c == '"')
+        {/* Found, go to next phase */
+            _asyncProcessState++;
+        }
+        break;
+
+    case 8: /* Read Date until '"' */
+        if (c == '"')
+        {/* process and go to next phase*/
+            _asyncProcessState++;
+        }
+        else
+        {/* Add the character to the temp string */
+            ((M590_SMS_ResultType *)_asyncResultptr)->date += c;
+        }
+        break;
+
+    case 9: /* Read until '\n'  */
+        if (c == '\n')
+        {/* Found, go to next phase */
+            _asyncProcessState++;
+        }
+        break;
+
+    case 10: /* Read Date until '\r' */ //@Todo: Better limitation needed
+        if (c == '\r')
+        {/* process and go to next phase*/
+            _asyncProcessState++;
+        }
+        else
+        {/* Add the character to the temp string */
+            ((M590_SMS_ResultType *)_asyncResultptr)->text += c;
+        }
+        break;
+
+    case 11: /* Process completed */
+        /* Do nothing */
+        break;
+
+    default:
+        printDebug(M590_ERROR_INVALID_STATE);
+        break;
+    }
+}
+
+void M590::processCUSD(char c)
+{
+    switch (_asyncProcessState)
+    {
+        case 0: /* Wait for separator */
+            if (c == ':')
+            {/* separator found go to next phase*/
+
+                _asyncProcessState = 1;
+            }
+        break;
+
+        case 1: /* Wait until '"'  */
+            if (c == '"')
+            {/* separator found go to next phase*/
+                _asyncProcessState = 2;
+            }
+        break;
+
+        case 2: /* Read until '"' */
+            if (c == '"')
+            {/* process and go to next phase*/
+                _asyncProcessState = 3;
+            }
+            else
+            {/* Add the character to the temp string */
+                *((M590_USSDResponse_ResultType *)_asyncResultptr) += c;
+            }
+        break;
+
+        case 3: /* Process completed */
+            /* Do nothing */
+            break;
+
+        default:
+            printDebug(M590_ERROR_INVALID_STATE);
+        break;
+    }
+}
+
+void M590::processCSQ(char c)
+{
+    switch (_asyncProcessState)
+    {
+        case 0: /* Wait for separator */
+            if (c == ':')
+            {/* separator found go to next phase*/
+
+                _asyncProcessState = 1;
+            }
+        break;
+
+        case 1: /* Read until ',' */
+            if (c == ',')
+            {/* process and go to next phase*/
+
+                ((M590_SignalQuality_ResultType *)_asyncResultptr)->rssi = _asyncTempString.toInt();
+                _asyncTempString = "";
+
+                _asyncProcessState = 2;
+            }
+            else
+            {/* Add the character to the temp string */
+                _asyncTempString += c;
+            }
+        break;
+
+        case 2: /* Read until '\r' */
+            if (c == '\r')
+            {/* process and go to next phase*/
+
+                ((M590_SignalQuality_ResultType *)_asyncResultptr)->ber = _asyncTempString.toInt();;
+                _asyncTempString = "";
+
+                _asyncProcessState = 3;
+            }
+            else
+            {/* Add the character to the temp string */
+                _asyncTempString += c;
+            }
+        break;
+
+
+        case 3: /* Process completed */
+            /* Do nothing */
+        break;
+
+        default:
+            printDebug(M590_ERROR_INVALID_STATE);
+        break;
     }
 }

@@ -49,8 +49,8 @@ enum m590States {
 
 enum m590CommandStates {
     M590_STATE_IDLE,
-    M590_STATE_USSD_START,
-    M590_STATE_USSD_RUN,
+    M590_STATE_ussdCbk_START,
+    M590_STATE_ussdCbk_RUN,
     M590_STATE_CMGR_START,
     M590_STATE_CMGR_RUN,
     M590_STATE_CMGL_START,
@@ -140,7 +140,7 @@ public:
 
     bool sendSMS(const char * phoneNumberString, const char * messageString);
 
-    bool sendUSSD(const char * ussdString);
+    bool sendussdCbk(const char * ussdCbkString);
 
     bool readSMS(byte indexString, char * smsBuffer, byte smsBufferSize);
 
@@ -148,7 +148,7 @@ public:
 
     /** Asynchronous interfaces **/
 
-    bool SendUSSD_Async(const char * ussdString, void(*notificationCbk)());
+    bool SendussdCbk_Async(const char * ussdCbkString, void(*notificationCbk)());
 
     bool readSMS_Async(byte indexString, char * smsBuffer, unsigned int smsBufferSize, void(*notificationCbk)());
     bool readParsedSMS_Async(byte indexString, char * smsText, unsigned int smsTextSize, char * smsStatus, unsigned int smsStatusSize,

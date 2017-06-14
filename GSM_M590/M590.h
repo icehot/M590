@@ -10,7 +10,7 @@
 #endif
 
 #include "Fifo.h"
-//#define MONITOR_M590
+#define MONITOR_M590
 
 #ifdef MONITOR_M590
 #define MONITOR(a) if(_debugSerial) _debugSerial->print(a);
@@ -40,17 +40,17 @@ typedef enum {
 
 typedef enum {
     M590_RES_NULL,
+    M590_RES_CUSD,
+    M590_RES_CMGR,
+    M590_RES_CMGL,
+    M590_RES_CMGS,
     M590_RES_CSQ,
-    M590_RES_SMS,
-    M590_RES_PARSED_SMS
 }ResultType;
 
 typedef struct {
     const char* command;
     String parameter;
     const char* response;
-    char* responebuffer = NULL;
-    byte responsebufferSize = 0;
     void(*commandCbk)(ResponseStateType response) = NULL;
     unsigned long timeout = ASYNC_TIMEOUT;
     ResultType resultType = M590_RES_NULL;
@@ -96,11 +96,32 @@ typedef enum {
     M590_SMS_DEL_ALL
 }DeleteFlagType;
 
+typedef enum {
+    M590_SMS_REC_UNREAD,
+    M590_SMS_REC_READ,
+    M590_SMS_STO_UNSENT,
+    M590_SMS_STO_SENT,
+    M590_SMS_ALL
+}M590_SMSReadFlagType;
+
 typedef struct{
     byte rssi;
     byte ber;
-}M590_CSQResultType;
+}M590_SignalQuality_ResultType;
 
+typedef String M590_USSDResponse_ResultType;
+
+typedef struct{
+    String text;
+    String status;
+    String sender;
+    String date;
+}M590_SMS_ResultType;
+
+typedef struct{
+    char smsCount;
+    M590_SMS_ResultType smsArray[10];
+}M590_SMSList_ResultType;
 
 const char
 M590_COMMAND_AT[]                       PROGMEM = "AT",
@@ -112,13 +133,18 @@ M590_COMMAND_SET_MODEM_GSM_CHARSET[]    PROGMEM = "AT+CSCS=\"GSM\"",
 M590_COMMAND_SET_MODEM_TEXT_MODE[]      PROGMEM = "AT+CMGF=1",
 M590_COMMAND_USSD_START[]               PROGMEM = "AT+CUSD=1,\"",
 M590_COMMAND_USSD_END[]                 PROGMEM = "\",15",
+M590_COMMAND_SMS_START[]                PROGMEM = "AT+CMGS=\"",
+M590_COMMAND_SMS_END[]                  PROGMEM = "\"",
 M590_COMMAND_SMS_DELETE[]               PROGMEM = "AT+CMGD=",
+M590_COMMAND_SMS_READ[]                 PROGMEM = "AT+CMGR=",
+M590_COMMAND_SMS_LIST_READ[]            PROGMEM = "AT+CMGL=",
 
 M590_RESPONSE_PREFIX[]                  PROGMEM = "+",
+M590_RESPONSE_TEXT_INPUT[]              PROGMEM = ">",
 M590_RESPONSE_PIN_REQUIRED[]            PROGMEM = " SIM PIN",
 M590_RESPONSE_PIN_NOT_REQUIRED[]        PROGMEM = " READY",
 M590_RESPONSE_PIN_VAL_DONE[]            PROGMEM = "+PBREADY",
-M590_RESPONSE_ERROR[]                   PROGMEM = "ERROR",
+M590_RESPONSE_ERROR[]                   PROGMEM = "ERROR\r\n",
 M590_RESPONSE_FAIL[]                    PROGMEM = "FAIL\r\n",
 M590_RESPONSE_OK[]                      PROGMEM = "OK\r\n";
 
@@ -134,8 +160,10 @@ M590_ERROR_NETWORK_NOT_REG[]                 PROGMEM = "\n#M590: Not registered 
 M590_ERROR_UNHANDLED_NET_STATE[]             PROGMEM = "\n#M590: Network status returned unhandled state: ",
 M590_ERROR_INIT_TIMEOUT[]                    PROGMEM = "\n#M590: Initialization Timeout",
 M590_ERROR_RESPONSE_TIMEOUT[]                PROGMEM = "\n#M590: Response Timeout",
+M590_ERROR_RESPONSE_ERROR[]                  PROGMEM = "\n#M590: Response Error",
 M590_ERROR_RESPONSE_LENGTH_EXCEEDED[]        PROGMEM = "\n#M590: Response Lenght exceeded",
 M590_ERROR_RESPONSE_INCOMPLETE[]             PROGMEM = "\n#M590: Incomplete Response",
+M590_ERROR_BUFFER_OVERFLOW[]                 PROGMEM = "\n#M590: Buffer Overflow",
 M590_ERROR_INVALID_STATE[]                   PROGMEM = "\n#M590: Invalid State";
 
 class M590
@@ -152,10 +180,14 @@ class M590
         /* Public API-s */
         void process();
         bool checkAlive(void(*commandCbk)(ResponseStateType response) = NULL);
-        bool getSignalStrength(M590_CSQResultType * csq, void(*commandCbk)(ResponseStateType response) = NULL);
+        bool getSignalStrength(M590_SignalQuality_ResultType * resultptr, void(*commandCbk)(ResponseStateType response) = NULL);
         bool setSMSTextModeCharSetGSM(void(*commandCbk)(ResponseStateType response) = NULL);
-        bool sendUSSD(char * ussdString, void(*commandCbk)(ResponseStateType response) = NULL);
+        bool sendSMS(const char *phoneNumber, const char* smsText, void(*commandCbk)(ResponseStateType response) = NULL);
+        bool sendUSSD(char * ussdString, M590_USSDResponse_ResultType* resultptr, void(*commandCbk)(ResponseStateType response) = NULL);
         bool deleteSMS(byte index, DeleteFlagType deleteFlag, void(*commandCbk)(ResponseStateType response) = NULL);
+        bool readSMS(byte index, M590_SMS_ResultType* resultptr, void(*commandCbk)(ResponseStateType response) = NULL);
+        bool readSMSList(M590_SMSReadFlagType readFlag, M590_SMSList_ResultType* resultptr, void(*commandCbk)(ResponseStateType response) = NULL);
+        
 
     private:
         /* Serial port handlers */
@@ -178,23 +210,26 @@ class M590
         const char *_asyncProgmemResponseString = NULL;
         byte _asyncResponseLength = 0;
         byte _asyncBytesMatched = 0;
-        char _asyncSeparator = ':';
-        bool _asyncSeparatorFound = false;
-        byte _asyncResponseIndex;
-        char* _asyncResponseBuffer = NULL;
-        byte _asyncResponseBufferSize = 0;
+        byte _asyncFailMatched = 0;
+        byte _asyncProcessState = 0;
+        String _asyncTempString = "";
         void(*_asyncCommandCbk)(ResponseStateType response) = NULL;
         ResultType _asyncResultType = M590_RES_NULL;
         void* _asyncResultptr = NULL;
-
-        /* Internal  handler functions for different results */
-        void processCSQ();
 
         /* Internal core functions*/
         void resetAsyncVariables();
         void sendCommand(const char *progmemCommand, String params);
         void responseHandler();
-        void processResult();
+        ResponseStateType readForResponseAsync();
+        void processResult(char c);
+
+        /* Internal  handler functions for different results */
+        void processCSQ(char c);
+        void processCUSD(char c);
+        void processCMGR(char c);
+        void processCMGL(char c);
+        void processCMGS(char c);
         
         /* Internal utility functions */
         void printDebug(const char *progmemString, bool withNewline = true);

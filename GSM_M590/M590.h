@@ -138,9 +138,12 @@ M590_COMMAND_SMS_END[]                  PROGMEM = "\"",
 M590_COMMAND_SMS_DELETE[]               PROGMEM = "AT+CMGD=",
 M590_COMMAND_SMS_READ[]                 PROGMEM = "AT+CMGR=",
 M590_COMMAND_SMS_LIST_READ[]            PROGMEM = "AT+CMGL=",
+M590_COMMAND_SMS_NOTIFICATION_ENABLE[]  PROGMEM = "AT+CNMI=2,1,0,0,0",
+M590_COMMAND_SMS_NOTIFICATION_DISABLE[] PROGMEM = "AT+CNMI=1,0,0,0,0",
 
 M590_RESPONSE_PREFIX[]                  PROGMEM = "+",
 M590_RESPONSE_TEXT_INPUT[]              PROGMEM = ">",
+M590_RESPONSE_CMTI[]                    PROGMEM = "+CMTI: \"SM\",",
 M590_RESPONSE_PIN_REQUIRED[]            PROGMEM = " SIM PIN",
 M590_RESPONSE_PIN_NOT_REQUIRED[]        PROGMEM = " READY",
 M590_RESPONSE_PIN_VAL_DONE[]            PROGMEM = "+PBREADY",
@@ -187,7 +190,8 @@ class M590
         bool deleteSMS(byte index, DeleteFlagType deleteFlag, void(*commandCbk)(ResponseStateType response) = NULL);
         bool readSMS(byte index, M590_SMS_ResultType* resultptr, void(*commandCbk)(ResponseStateType response) = NULL);
         bool readSMSList(M590_SMSReadFlagType readFlag, M590_SMSList_ResultType* resultptr, void(*commandCbk)(ResponseStateType response) = NULL);
-        
+        bool enableNewSMSNotification(void(*newSMSnotificationCbk)(byte index), void(*commandCbk)(ResponseStateType response) = NULL);
+        bool disableNewSMSNotification(void(*commandCbk)(ResponseStateType response) = NULL);
 
     private:
         /* Serial port handlers */
@@ -203,6 +207,8 @@ class M590
         InitStateType _initState = M590_UNINITIALIZED;
         NetworkStateType _networkState = M590_NET_NOT_REGISTERED_NOT_SEARCHING;
         ResponseStateType _responseState = M590_RESPONSE_IDLE;
+        bool _smsNotificationEnabled = false;
+        bool _newSMSArrived = false;
 
         /* Internal variables for asynchronous response handling */
         unsigned long _asyncStartTime = 0;
@@ -211,9 +217,11 @@ class M590
         byte _asyncResponseLength = 0;
         byte _asyncBytesMatched = 0;
         byte _asyncFailMatched = 0;
+        byte _asyncSMSMatched = 0;
         byte _asyncProcessState = 0;
         String _asyncTempString = "";
         void(*_asyncCommandCbk)(ResponseStateType response) = NULL;
+        void(*_newSMSnotificationCbk)(byte index) = NULL;
         ResultType _asyncResultType = M590_RES_NULL;
         void* _asyncResultptr = NULL;
 
@@ -234,6 +242,8 @@ class M590
         /* Internal utility functions */
         void printDebug(const char *progmemString, bool withNewline = true);
         void printDebug(const String s, bool withNewline = true );
+        void gatewayHandler();
+        void checkForNewSMS(char c);
 
         /* Init related synchronous interfaces */
         bool isAlive();

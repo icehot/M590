@@ -7,6 +7,24 @@ M590_USSDResponse_ResultType ussd;
 M590_SMS_ResultType sms;
 M590_SMSList_ResultType smsList;
 
+void newSmsNotificationEnableCbk(ResponseStateType response)
+{
+    if (response == M590_RESPONSE_SUCCESS)
+    {
+        Serial.println(F("#App: Sms notification enabled"));
+    }
+    else
+    {
+        Serial.print(F("#App: CNMI error: ")); Serial.println(response);
+    }
+}
+
+void newSmsNotificationCbk(byte index)
+{
+    Serial.println("\nNew SMS arrived!");
+    gsm.readSMS(index, &sms, &readSMSCbk);
+}
+
 void sendSmsCbk(ResponseStateType response)
 {
     if (response == M590_RESPONSE_SUCCESS)
@@ -151,14 +169,14 @@ void setup()
 
     gsm.checkAlive(&aliveCbk);
     gsm.setSMSTextModeCharSetGSM(&settingsCbk);
-    gsm.deleteSMS(0, M590_SMS_DEL_ALL, &deleteSMSCbk);
-    gsm.sendUSSD("*133#", &ussd, &ussdCbk);
+    //gsm.deleteSMS(0, M590_SMS_DEL_ALL, &deleteSMSCbk);
+    //gsm.sendUSSD("*133#", &ussd, &ussdCbk);
     gsm.getSignalStrength(&sq, &sqCbk);
-    gsm.readSMS(1, &sms, &readSMSCbk);
+    //gsm.readSMS(1, &sms, &readSMSCbk);
     gsm.readSMSList(M590_SMS_ALL, &smsList, &readSMSListCbk);
-    gsm.sendSMS("+40745662769", "Hello World", &sendSmsCbk);
+    //gsm.sendSMS("+40745662769", "Hello World", &sendSmsCbk);
+    gsm.enableNewSMSNotification(&newSmsNotificationCbk, &newSmsNotificationEnableCbk);
     gsm.checkAlive(&aliveCbk);
-    
 }
 
 void loop()

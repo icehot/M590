@@ -44,7 +44,7 @@ void M590::process()
         }
         else
         {/* There is no job in the fifo, idle task can run */
-
+            gatewayHandler();
         }
     }
     else
@@ -240,6 +240,52 @@ bool M590::getSignalStrength(M590_SignalQuality_ResultType* resultptr, void(*com
 
     if (_commandFifo.add(c))
         return true;
+    else
+        return false;
+}
+
+bool M590::enableNewSMSNotification(void(*newSMSnotificationCbk)(byte index), void(*commandCbk)(ResponseStateType response))
+{
+    CommandType c;
+
+    c.command = M590_COMMAND_SMS_NOTIFICATION_ENABLE;
+    c.parameter = "";
+    c.response = M590_RESPONSE_OK;
+    c.commandCbk = commandCbk;
+    c.resultType = M590_RES_NULL;
+    
+    if (newSMSnotificationCbk != NULL)
+        _newSMSnotificationCbk = newSMSnotificationCbk;
+    else
+        return false;
+
+    if (_commandFifo.add(c))
+    {
+        _smsNotificationEnabled = true;
+        return true;
+    }
+    else 
+    { 
+        return false;
+    }
+}
+
+bool M590::disableNewSMSNotification(void(*commandCbk)(ResponseStateType response))
+{
+    CommandType c;
+
+    c.command = M590_COMMAND_SMS_NOTIFICATION_DISABLE;
+    c.parameter = "";
+    c.response = M590_RESPONSE_OK;
+    c.commandCbk = commandCbk;
+    c.resultType = M590_RES_NULL;
+    _newSMSnotificationCbk = NULL;
+
+    if (_commandFifo.add(c))
+    {
+        _smsNotificationEnabled = false;
+        return true;
+    }
     else
         return false;
 }

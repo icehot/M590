@@ -101,15 +101,15 @@ typedef enum {
 
 class M590 {
 public:
-    M590();
+     M590();
 
-    bool begin(unsigned long baudRate = 115200,HardwareSerial *gsmSerial = NULL);
+     bool begin(unsigned long baudRate = 115200,HardwareSerial *gsmSerial = NULL);
 
-    void enableDebugSerial(HardwareSerial *debugSerial = NULL);
+     void enableDebugSerial(HardwareSerial *debugSerial = NULL);
 
     int available();
 
-    bool connected();
+     bool connected();
 
     char read();
 
@@ -117,44 +117,44 @@ public:
 
     void print(String s);
 
-    bool initialize(String pin = "");
+     bool initialize(String pin = "");
 
-    void loop();
+     void loop();
 
-    bool checkAlive(void(*callback)(void) = NULL);
+     bool checkAlive(void(*callback)(void) = NULL);
 
-    bool isAlive();
+     bool isAlive();
 
-    bool checkPinRequired();
+     bool checkPinRequired();
 
-    bool sendPinEntry(String pin, void(*callback)(void) = NULL);
+     bool sendPinEntry(String pin, void(*callback)(void) = NULL);
 
-    m590NetworkStates checkNetworkState();
+     m590NetworkStates checkNetworkState();
 
 
     /** Synchronous intefaces **/
 
-    bool getSignalStrength(byte* rssi, byte* ber);
+     bool getSignalStrength(byte* rssi, byte* ber);
 
-    bool setSMSTextModeCharSetGSM();
+     bool setSMSTextModeCharSetGSM();
 
-    bool sendSMS(const char * phoneNumberString, const char * messageString);
+     bool sendSMS(const char * phoneNumberString, const char * messageString);
 
-    bool sendussdCbk(const char * ussdCbkString);
+     bool sendussdCbk(const char * ussdCbkString);
 
-    bool readSMS(byte indexString, char * smsBuffer, byte smsBufferSize);
+     bool readSMS(byte indexString, char * smsBuffer, byte smsBufferSize);
 
-    bool deleteSMS(byte index, byte deleteFlag);
+     bool deleteSMS(byte index, byte deleteFlag);
 
     /** Asynchronous interfaces **/
 
-    bool SendussdCbk_Async(const char * ussdCbkString, void(*notificationCbk)());
+     bool SendussdCbk_Async(const char * ussdCbkString, void(*notificationCbk)());
 
-    bool readSMS_Async(byte indexString, char * smsBuffer, unsigned int smsBufferSize, void(*notificationCbk)());
-    bool readParsedSMS_Async(byte indexString, char * smsText, unsigned int smsTextSize, char * smsStatus, unsigned int smsStatusSize,
+     bool readSMS_Async(byte indexString, char * smsBuffer, unsigned int smsBufferSize, void(*notificationCbk)());
+     bool readParsedSMS_Async(byte indexString, char * smsText, unsigned int smsTextSize, char * smsStatus, unsigned int smsStatusSize,
                        char * smsSender, unsigned int smsSenderSize, char * smsDate, unsigned int smsDateSize, void(*notificationCbk)());
 
-    bool readSMSList_Async(m590SMSreadFlags readFlag, char * smsBuffer, unsigned int smsBufferSize, void(*notificationCbk)());
+     bool readSMSList_Async(m590SMSreadFlags readFlag, char * smsBuffer, unsigned int smsBufferSize, void(*notificationCbk)());
     
     bool enableNewSMSNotification(void(*newSMSnotificationCbk)(byte index));
 

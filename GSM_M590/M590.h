@@ -45,6 +45,7 @@ typedef enum {
     M590_RES_CMGL,
     M590_RES_CMGS,
     M590_RES_CSQ,
+    M590_RES_XIIC,
 }ResultType;
 
 typedef struct {
@@ -123,6 +124,8 @@ typedef struct{
     M590_SMS_ResultType smsArray[10];
 }M590_SMSList_ResultType;
 
+typedef String M590_IP_ResultType;
+
 const char
 M590_COMMAND_AT[]                       PROGMEM = "AT",
 M590_COMMAND_CHECK_PIN[]                PROGMEM = "AT+CPIN?",
@@ -140,6 +143,12 @@ M590_COMMAND_SMS_READ[]                 PROGMEM = "AT+CMGR=",
 M590_COMMAND_SMS_LIST_READ[]            PROGMEM = "AT+CMGL=",
 M590_COMMAND_SMS_NOTIFICATION_ENABLE[]  PROGMEM = "AT+CNMI=2,1,0,0,0",
 M590_COMMAND_SMS_NOTIFICATION_DISABLE[] PROGMEM = "AT+CNMI=1,0,0,0,0",
+M590_COMMAND_GPRS_CONNECT[]             PROGMEM = "AT+XIIC=1",
+M590_COMMAND_GPRS_DISCONNECT[]          PROGMEM = "AT+XIIC=0",
+M590_COMMAND_GPRS_CHECK_CONNECTION[]    PROGMEM = "AT+XIIC?",
+M590_COMMAND_GPRS_INTERNAL_STACK[]      PROGMEM = "AT+XISP=0",
+M590_COMMAND_GPRS_SET_APN[]             PROGMEM = "AT+CGDCONT=1,\"IP\",\"",
+M590_COMMAND_GPRS_AUTHENTICATE[]        PROGMEM = "AT+XGAUTH=1,1,\"",
 
 M590_RESPONSE_PREFIX[]                  PROGMEM = "+",
 M590_RESPONSE_TEXT_INPUT[]              PROGMEM = ">",
@@ -193,6 +202,8 @@ class M590
         bool enableNewSMSNotification(void(*newSMSnotificationCbk)(byte index), void(*commandCbk)(ResponseStateType response) = NULL);
         bool disableNewSMSNotification(void(*commandCbk)(ResponseStateType response) = NULL);
 
+        bool attachGPRS(const char* apn, const char* user, const char* pwd, M590_IP_ResultType* resultptr, void(*commandCbk)(ResponseStateType response) = NULL);
+
     private:
         /* Serial port handlers */
         HardwareSerial *_gsmSerial = NULL;
@@ -238,6 +249,7 @@ class M590
         void processCMGR(char c);
         void processCMGL(char c);
         void processCMGS(char c);
+        void processXIIC(char c);
         
         /* Internal utility functions */
         void printDebug(const char *progmemString, bool withNewline = true);

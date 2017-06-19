@@ -9,7 +9,7 @@
 #include "WProgram.h"
 #endif
 
-#define MAX_ITEM 10 
+#define MAX_ITEM 15 
 
 
 template <class T>

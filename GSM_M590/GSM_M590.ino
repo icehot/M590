@@ -6,6 +6,7 @@ M590_SignalQuality_ResultType sq;
 M590_USSDResponse_ResultType ussd;
 M590_SMS_ResultType sms;
 M590_SMSList_ResultType smsList;
+M590_IP_ResultType ip;
 
 void newSmsNotificationEnableCbk(ResponseStateType response)
 {
@@ -121,6 +122,18 @@ void aliveCbk(ResponseStateType response)
     }
 }
 
+void attachGPRSCbk(ResponseStateType response)
+{
+    if (response == M590_RESPONSE_SUCCESS)
+    {
+        Serial.print(F("#App: GPRS attached, obtained ip is: ")); Serial.println(ip);
+    }
+    else
+    {
+        Serial.print(F("#App: GPRS attach error: ")); Serial.println(response);
+    }
+}
+
 void settingsCbk(ResponseStateType response)
 {
     if (response == M590_RESPONSE_SUCCESS)
@@ -169,14 +182,21 @@ void setup()
 
     gsm.checkAlive(&aliveCbk);
     gsm.setSMSTextModeCharSetGSM(&settingsCbk);
-    //gsm.deleteSMS(0, M590_SMS_DEL_ALL, &deleteSMSCbk);
+    gsm.deleteSMS(0, M590_SMS_DEL_ALL, &deleteSMSCbk);
     //gsm.sendUSSD("*133#", &ussd, &ussdCbk);
     gsm.getSignalStrength(&sq, &sqCbk);
     //gsm.readSMS(1, &sms, &readSMSCbk);
     gsm.readSMSList(M590_SMS_ALL, &smsList, &readSMSListCbk);
     //gsm.sendSMS("+40745662769", "Hello World", &sendSmsCbk);
-    gsm.enableNewSMSNotification(&newSmsNotificationCbk, &newSmsNotificationEnableCbk);
+    //gsm.enableNewSMSNotification(&newSmsNotificationCbk, &newSmsNotificationEnableCbk);
+
+    if (!gsm.attachGPRS("net", "", "", &ip, &attachGPRSCbk))
+    {
+        Serial.println("App: GPRS attach failed");
+    }
+
     gsm.checkAlive(&aliveCbk);
+
 }
 
 void loop()

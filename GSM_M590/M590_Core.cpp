@@ -186,6 +186,10 @@ void M590::processResult(char c)
             processCSQ(c);
         break;
 
+        case M590_RES_XIIC:
+            processXIIC(c);
+        break;
+
         case M590_RES_NULL:
             /* Nothing to process */
             break;
@@ -531,6 +535,42 @@ void M590::processCSQ(char c)
 
         default:
             printDebug(M590_ERROR_INVALID_STATE);
+        break;
+    }
+}
+
+void M590::processXIIC(char c)
+{
+    switch (_asyncProcessState)
+    {
+    case 0: /* Wait for separator */
+        if (c == ',')
+        {/* separator found go to next phase*/
+
+            _asyncProcessState = 1;
+        }
+        break;
+
+    case 1: /* Read until '\r' */
+        if (c == '\r')
+        {/* process and go to next phase*/
+
+            *((M590_IP_ResultType *)_asyncResultptr) = _asyncTempString;
+            _asyncTempString = "";
+
+            _asyncProcessState = 2;
+        }
+        else
+        {/* Add the character to the temp string */
+            _asyncTempString += c;
+        }
+
+    case 2: /* Process completed */
+        /* Do nothing */
+        break;
+
+    default:
+        printDebug(M590_ERROR_INVALID_STATE);
         break;
     }
 }

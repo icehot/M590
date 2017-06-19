@@ -289,3 +289,98 @@ bool M590::disableNewSMSNotification(void(*commandCbk)(ResponseStateType respons
     else
         return false;
 }
+
+bool M590::attachGPRS(const char* apn, const char* user, const char* pwd, M590_IP_ResultType* resultptr, void(*commandCbk)(ResponseStateType response) = NULL)
+{
+    bool retVal= true;
+
+    /*1. Disconnect GPRS "AT+XIIC=0"*/
+
+    CommandType c;
+
+    c.command = M590_COMMAND_GPRS_DISCONNECT;
+    c.parameter = "";
+    c.response = M590_RESPONSE_OK;
+    c.commandCbk = NULL;
+    c.resultType = M590_RES_NULL;
+
+    if (_commandFifo.add(c) == false )
+    {
+        retVal = false;
+    }
+
+    /*2. Set internal Protocol Stack "AT+XISP=0" */
+
+    c.command = M590_COMMAND_GPRS_INTERNAL_STACK;
+    c.parameter = "";
+    c.response = M590_RESPONSE_OK;
+    c.commandCbk = NULL;
+    c.resultType = M590_RES_NULL;
+
+    if (_commandFifo.add(c) == false)
+    {
+        retVal = false;
+    }
+
+    /*3. Set APN "AT+CGDCONT=1,"IP","apn" */
+
+    c.command = M590_COMMAND_GPRS_SET_APN;
+    c.parameter = "";
+    c.parameter += apn;
+    c.parameter += "\"";
+    c.response = M590_RESPONSE_OK;
+    c.commandCbk = NULL;
+    c.resultType = M590_RES_NULL;
+
+    if (_commandFifo.add(c) == false)
+    {
+        retVal = false;
+    }
+
+    /*4. Authenticate to APN "AT+XGAUTH=1,1,”user”,”pwd" */
+
+    if (!user) user = "";
+    if (!pwd)  pwd = "";
+
+    c.command = M590_COMMAND_GPRS_AUTHENTICATE;
+    c.parameter = "";
+    c.parameter += user;
+    c.parameter += "\",\"";
+    c.parameter += pwd;
+    c.parameter += "\"";
+    c.response = M590_RESPONSE_OK;
+    c.commandCbk = NULL;
+    c.resultType = M590_RES_NULL;
+
+    if (_commandFifo.add(c) == false)
+    {
+        retVal = false;
+    }
+
+    /* 5. Establish PPP link "AT+XIIC=1" */
+    c.command = M590_COMMAND_GPRS_CONNECT;
+    c.parameter = "";
+    c.response = M590_RESPONSE_OK;
+    c.commandCbk = NULL;
+    c.resultType = M590_RES_NULL;
+
+    if (_commandFifo.add(c) == false)
+    {
+        retVal = false;
+    }
+
+    /* 6. Check for connection success "AT+XIIC?" */
+    c.command = M590_COMMAND_GPRS_CHECK_CONNECTION;
+    c.parameter = "";
+    c.response = M590_RESPONSE_OK;
+    c.commandCbk = commandCbk;
+    c.resultType = M590_RES_XIIC;
+    c.resultptr = (void*)resultptr;
+
+    if (_commandFifo.add(c) == false)
+    {
+        retVal = false;
+    }
+
+    return retVal;
+}

@@ -25,7 +25,10 @@
 #define ASYNC_TIMEOUT              2000
 #define PIN_VALIDATION_TIMEOUT     20000
 #define INIT_TIMEOUT               30000
+#define ATTACH_GPRS_TIMEOUT        10000
 #define SEARCH_FOR_NETWORK_TIMEOUT 10000
+#define DNS_TIMEOUT                10000
+#define TCP_TIMEOUT                10000
 #define STATUS_POLLING_RATE        250
 
 typedef enum {
@@ -46,17 +49,10 @@ typedef enum {
     M590_RES_CMGS,
     M590_RES_CSQ,
     M590_RES_XIIC,
+    M590_RES_DNS
 }ResultType;
 
-typedef struct {
-    const char* command;
-    String parameter;
-    const char* response;
-    void(*commandCbk)(ResponseStateType response) = NULL;
-    unsigned long timeout = ASYNC_TIMEOUT;
-    ResultType resultType = M590_RES_NULL;
-    void* resultptr;
-}CommandType;
+
 
 typedef enum {
     M590_MODEM_IDLE = 0,
@@ -72,6 +68,17 @@ typedef enum {
     M590_INIT_DONE,
     M590_INIT_ERROR,
 }InitStateType;
+
+typedef enum {
+    M590_GPRS_DISCONNECTED = 0,
+    M590_GPRS_INTERNAL_STACK,
+    M590_GPRS_SET_APN,
+    M590_GPRS_AUTH_APN,
+    M590_GPRS_CONNECT_APN,
+    M590_GPRS_CHECK_IP,
+    M590_GPRS_ERROR,
+    M590_GPRS_CONNECTED,
+}GprsStateType;
 
 typedef enum {
     M590_PIN_NOT_REQUIRED = 0,
@@ -149,6 +156,8 @@ M590_COMMAND_GPRS_CHECK_CONNECTION[]    PROGMEM = "AT+XIIC?",
 M590_COMMAND_GPRS_INTERNAL_STACK[]      PROGMEM = "AT+XISP=0",
 M590_COMMAND_GPRS_SET_APN[]             PROGMEM = "AT+CGDCONT=1,\"IP\",\"",
 M590_COMMAND_GPRS_AUTHENTICATE[]        PROGMEM = "AT+XGAUTH=1,1,\"",
+M590_COMMAND_GPRS_DNS[]                 PROGMEM = "AT+DNS=\"",
+M590_COMMAND_GPRS_TCPSETUP[]            PROGMEM = "AT+TCPSETUP=",
 
 M590_RESPONSE_PREFIX[]                  PROGMEM = "+",
 M590_RESPONSE_TEXT_INPUT[]              PROGMEM = ">",
@@ -156,8 +165,11 @@ M590_RESPONSE_CMTI[]                    PROGMEM = "+CMTI: \"SM\",",
 M590_RESPONSE_PIN_REQUIRED[]            PROGMEM = " SIM PIN",
 M590_RESPONSE_PIN_NOT_REQUIRED[]        PROGMEM = " READY",
 M590_RESPONSE_PIN_VAL_DONE[]            PROGMEM = "+PBREADY",
-M590_RESPONSE_ERROR[]                   PROGMEM = "ERROR\r\n",
+M590_RESPONSE_DNS_OK[]                  PROGMEM = "+DNS:OK",
+M590_RESPONSE_DNS_ERROR[]               PROGMEM = "+DNS:Error",
+M590_RESPONSE_TCP0_OK[]                 PROGMEM = "+TCPSETUP:0,OK",
 M590_RESPONSE_FAIL[]                    PROGMEM = "FAIL\r\n",
+M590_RESPONSE_ERROR[]                   PROGMEM = "ERROR\r\n",
 M590_RESPONSE_OK[]                      PROGMEM = "OK\r\n";
 
 const char
@@ -176,10 +188,29 @@ M590_ERROR_RESPONSE_ERROR[]                  PROGMEM = "\n#M590: Response Error"
 M590_ERROR_RESPONSE_LENGTH_EXCEEDED[]        PROGMEM = "\n#M590: Response Lenght exceeded",
 M590_ERROR_RESPONSE_INCOMPLETE[]             PROGMEM = "\n#M590: Incomplete Response",
 M590_ERROR_BUFFER_OVERFLOW[]                 PROGMEM = "\n#M590: Buffer Overflow",
+M590_ERROR_FIFO_FULL[]                       PROGMEM = "\n#M590: FIFO Full",
+M590_ERROR_GPRS_DISCONNECT[]                 PROGMEM = "\n#M590: GPRS Disconnection Error",
+M590_ERROR_GPRS_STACK[]                      PROGMEM = "\n#M590: GPRS Stack Error",
+M590_ERROR_GPRS_APN[]                        PROGMEM = "\n#M590: GPRS Set APN Error",
+M590_ERROR_GPRS_AUTH[]                       PROGMEM = "\n#M590: GPRS Authentication Error",
+M590_ERROR_GPRS_CONNECTION[]                 PROGMEM = "\n#M590: GPRS Connection Error",
+M590_ERROR_GPRS_IP_CHECK[]                   PROGMEM = "\n#M590: GPRS IP Check Error",
+M590_ERROR_GPRS_DNS_ERROR[]                  PROGMEM = "\n#M590: GPRS Unknown Host",
 M590_ERROR_INVALID_STATE[]                   PROGMEM = "\n#M590: Invalid State";
 
 class M590
 {
+    typedef struct {
+        const char* command;
+        String parameter;
+        const char* response;
+        void(*commandCbk)(ResponseStateType response) = NULL;
+        void(M590::*internalCbk)(ResponseStateType response) = NULL;
+        unsigned long timeout = ASYNC_TIMEOUT;
+        ResultType resultType = M590_RES_NULL;
+        void* resultptr;
+    }CommandType;
+
     public:
         /* Constructor */
         M590();
@@ -188,6 +219,11 @@ class M590
         bool enableDebugSerial(HardwareSerial *debugSerial);
         bool init(unsigned long baudRate, HardwareSerial *gsmSerial, char* pin = "");
         bool waitForNetWork(const unsigned int timeout = SEARCH_FOR_NETWORK_TIMEOUT);
+
+        /* GPRS initialization */
+        bool detachGPRS();
+        bool attachGPRS(const char* apn, const char* user, const char* pwd, M590_IP_ResultType* resultptr);
+        bool connect(const char *host, unsigned int port, void(*commandCbk)(ResponseStateType response) = NULL);
 
         /* Public API-s */
         void process();
@@ -202,7 +238,6 @@ class M590
         bool enableNewSMSNotification(void(*newSMSnotificationCbk)(byte index), void(*commandCbk)(ResponseStateType response) = NULL);
         bool disableNewSMSNotification(void(*commandCbk)(ResponseStateType response) = NULL);
 
-        bool attachGPRS(const char* apn, const char* user, const char* pwd, M590_IP_ResultType* resultptr, void(*commandCbk)(ResponseStateType response) = NULL);
 
     private:
         /* Serial port handlers */
@@ -212,6 +247,7 @@ class M590
         /* Internal storage variables */
         Fifo<CommandType> _commandFifo;
         char _internalBuffer[16];
+        String _internalString = "";
 
         /* Internal state variables */
         ModemStateType _gsmState = M590_MODEM_IDLE;
@@ -220,6 +256,7 @@ class M590
         ResponseStateType _responseState = M590_RESPONSE_IDLE;
         bool _smsNotificationEnabled = false;
         bool _newSMSArrived = false;
+        GprsStateType _gprsState = M590_GPRS_DISCONNECTED;
 
         /* Internal variables for asynchronous response handling */
         unsigned long _asyncStartTime = 0;
@@ -231,10 +268,12 @@ class M590
         byte _asyncSMSMatched = 0;
         byte _asyncProcessState = 0;
         String _asyncTempString = "";
-        void(*_asyncCommandCbk)(ResponseStateType response) = NULL;
-        void(*_newSMSnotificationCbk)(byte index) = NULL;
+        void (*_asyncCommandCbk)(ResponseStateType response) = NULL;
+        void (*_newSMSnotificationCbk)(byte index) = NULL;
         ResultType _asyncResultType = M590_RES_NULL;
-        void* _asyncResultptr = NULL;
+        void *_asyncResultptr = NULL;
+        void (M590::*_internalCbk)(ResponseStateType response) = NULL;
+        unsigned int _asyncPort = 0;
 
         /* Internal core functions*/
         void resetAsyncVariables();
@@ -243,6 +282,9 @@ class M590
         ResponseStateType readForResponseAsync();
         void processResult(char c);
 
+        void connectPhase2(ResponseStateType response);
+        void connectPhase3(ResponseStateType response);
+
         /* Internal  handler functions for different results */
         void processCSQ(char c);
         void processCUSD(char c);
@@ -250,7 +292,8 @@ class M590
         void processCMGL(char c);
         void processCMGS(char c);
         void processXIIC(char c);
-        
+        void processDNS(char c);
+
         /* Internal utility functions */
         void printDebug(const char *progmemString, bool withNewline = true);
         void printDebug(const String s, bool withNewline = true );
@@ -263,9 +306,18 @@ class M590
         bool M590::sendPinEntry(char* pin);
         bool M590::pinValidation();
         NetworkStateType checkNetworkState();
+        ResponseStateType readForResponseStringBufferedSync(const char *progmemResponseString, const char *progmemFailString, String* buffer, const unsigned int timeout = COMMAND_TIMEOUT);
         ResponseStateType readForResponseBufferedSync(const char *progmemResponseString, char *buffer = NULL, const unsigned int max_bytes = 0, const unsigned int timeout = COMMAND_TIMEOUT);
         ResponseStateType readForResponseSync(const char *progmemResponseString, const char *progmemFailString, const unsigned int timeout = COMMAND_TIMEOUT);
         bool bufferStartsWithProgmem(char *buffer, const char *progmemString);
+
+        bool setInternalStack();
+        bool setAPN(const char * apn);
+        bool authenticateAPN(const char * user, const char * pwd);
+        bool connectToAPN();
+        bool checkForIP(M590_IP_ResultType* resultptr);
+        bool dnsIpQuery(const char* host, M590_IP_ResultType* resultptr);
+
 };
 
 #endif

@@ -122,18 +122,6 @@ void aliveCbk(ResponseStateType response)
     }
 }
 
-void attachGPRSCbk(ResponseStateType response)
-{
-    if (response == M590_RESPONSE_SUCCESS)
-    {
-        Serial.print(F("#App: GPRS attached, obtained ip is: ")); Serial.println(ip);
-    }
-    else
-    {
-        Serial.print(F("#App: GPRS attach error: ")); Serial.println(response);
-    }
-}
-
 void settingsCbk(ResponseStateType response)
 {
     if (response == M590_RESPONSE_SUCCESS)
@@ -180,6 +168,18 @@ void setup()
         Serial.println(F("#App: Network Registration Failed"));
     }
 
+    if (gsm.attachGPRS("net", "", "", &ip))
+    {
+        Serial.print(F("#App: GPRS attached, obtained IP: ")); Serial.println(ip);
+    }
+    else
+    {
+        Serial.println("App: GPRS attach failed");
+    }
+
+    
+
+
     gsm.checkAlive(&aliveCbk);
     gsm.setSMSTextModeCharSetGSM(&settingsCbk);
     gsm.deleteSMS(0, M590_SMS_DEL_ALL, &deleteSMSCbk);
@@ -189,12 +189,7 @@ void setup()
     gsm.readSMSList(M590_SMS_ALL, &smsList, &readSMSListCbk);
     //gsm.sendSMS("+40745662769", "Hello World", &sendSmsCbk);
     //gsm.enableNewSMSNotification(&newSmsNotificationCbk, &newSmsNotificationEnableCbk);
-
-    if (!gsm.attachGPRS("net", "", "", &ip, &attachGPRSCbk))
-    {
-        Serial.println("App: GPRS attach failed");
-    }
-
+    gsm.connect("icehot.go.ro", 89);
     gsm.checkAlive(&aliveCbk);
 
 }

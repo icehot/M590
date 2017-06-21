@@ -4,6 +4,133 @@
 
 /* The initialisation uses synchronous (blocking) modem access based on https://github.com/LeoDJ/M590 work */
 
+/* attach GPRS */
+
+bool M590::attachGPRS(const char* apn, const char* user, const char* pwd, M590_IP_ResultType* resultptr)
+{
+    bool retVal = false;
+    bool continueInit = true;
+
+    u32 startTime = millis();
+
+    while ((millis() < startTime + ATTACH_GPRS_TIMEOUT) && (continueInit == true))
+    {
+        switch (_gprsState)
+        {
+            case M590_GPRS_DISCONNECTED:
+                if (detachGPRS())
+                {
+                    _gprsState = M590_GPRS_INTERNAL_STACK;
+                }
+                else
+                {
+                    printDebug(M590_ERROR_GPRS_DISCONNECT);
+                    _gprsState = M590_GPRS_ERROR;
+                    retVal = false;
+                }
+                break;
+
+            case M590_GPRS_INTERNAL_STACK:
+                if (setInternalStack())
+                {
+                    _gprsState = M590_GPRS_SET_APN;
+                }
+                else
+                {
+                    printDebug(M590_ERROR_GPRS_STACK);
+                    _gprsState = M590_GPRS_ERROR;
+                    retVal = false;
+                }
+                break;
+
+            case M590_GPRS_SET_APN:
+                if (setAPN(apn))
+                {
+                    _gprsState = M590_GPRS_AUTH_APN;
+                }
+                else
+                {
+                    printDebug(M590_ERROR_GPRS_APN);
+                    _gprsState = M590_GPRS_ERROR;
+                    retVal = false;
+                }
+                break;
+
+            case M590_GPRS_AUTH_APN:
+                if (authenticateAPN(user,pwd))
+                {
+                    _gprsState = M590_GPRS_CONNECT_APN;
+                }
+                else
+                {
+                    printDebug(M590_ERROR_GPRS_AUTH);
+                    _gprsState = M590_GPRS_ERROR;
+                    retVal = false;
+                }
+                break;
+
+            case M590_GPRS_CONNECT_APN:
+                if (connectToAPN())
+                {
+                    _gprsState = M590_GPRS_CHECK_IP;
+                }
+                else
+                {
+                    printDebug(M590_ERROR_GPRS_CONNECTION);
+                    _gprsState = M590_GPRS_ERROR;
+                    retVal = false;
+                }
+                break;
+
+            case M590_GPRS_CHECK_IP:
+
+                if (checkForIP(resultptr))
+                {
+                    if (resultptr->equals("0.0.0.0"))
+                    {
+                        /* Wait for valid IP until timeout */
+                        //printDebug(F("."),false);
+                    }
+                    else
+                    {
+                        _gprsState = M590_GPRS_CONNECTED;
+                    }
+                }
+                else
+                {
+                    printDebug(M590_ERROR_GPRS_IP_CHECK);
+                    _gprsState = M590_GPRS_ERROR;
+                    retVal = false;
+                }
+                break;
+
+            case M590_GPRS_CONNECTED:
+                /* Successfull connection*/
+                continueInit = false;
+                retVal = true;
+                break;
+
+            case M590_GPRS_ERROR:
+                continueInit = false;
+                retVal = false;
+                break;
+
+            default:
+                /* Should never reach here */
+                printDebug(M590_ERROR_INVALID_STATE);
+                break;
+        }
+    }
+
+    if (continueInit == true)
+    {
+        printDebug(M590_ERROR_INIT_TIMEOUT);
+        retVal = false;
+    }
+
+    return retVal;
+}
+
 /* Synchronous initialisation */
 
 bool M590::init(unsigned long baudRate, HardwareSerial *gsmSerial, char* pin)
@@ -155,7 +282,7 @@ bool M590::waitForNetWork(const unsigned int timeout)
             {
                 if (_networkState == M590_NET_SEARCHING_NOT_REGISTERED)
                 {
-                    printDebug(".",false); //print dots to show wait for registration
+                    //printDebug(F("."),false); //print dots to show wait for registration
                 }
                 else
                 {
@@ -179,7 +306,6 @@ bool M590::waitForNetWork(const unsigned int timeout)
 
 bool M590::isAlive()
 {
-    ResponseStateType resp;
     sendCommand(M590_COMMAND_AT, "");
 
     if (readForResponseSync(M590_RESPONSE_OK, M590_RESPONSE_ERROR) == M590_RESPONSE_SUCCESS)
@@ -266,9 +392,110 @@ NetworkStateType M590::checkNetworkState()
         return M590_NET_PARSE_ERROR;
 }
 
+bool M590::detachGPRS()
+{/* Disconnect GPRS "AT+XIIC=0" */
+    sendCommand(M590_COMMAND_GPRS_DISCONNECT, "");
+
+    if (readForResponseSync(M590_RESPONSE_OK, M590_RESPONSE_ERROR) == M590_RESPONSE_SUCCESS)
+        return true;
+    else
+        return false;
+}
+
+bool M590::setInternalStack()
+{/* Set internal Protocol Stack "AT+XISP=0" */
+    sendCommand(M590_COMMAND_GPRS_INTERNAL_STACK, "");
+
+    if (readForResponseSync(M590_RESPONSE_OK, M590_RESPONSE_ERROR) == M590_RESPONSE_SUCCESS)
+        return true;
+    else
+        return false;
+}
+
+
+bool M590::setAPN(const char * apn)
+{/* Set APN "AT+CGDCONT=1,"IP","apn" */
+    String parameter = "";
+
+    parameter = "";
+    parameter += apn;
+    parameter += "\"";
+
+    sendCommand(M590_COMMAND_GPRS_SET_APN, parameter);
+
+    if (readForResponseSync(M590_RESPONSE_OK, M590_RESPONSE_ERROR) == M590_RESPONSE_SUCCESS)
+        return true;
+    else
+        return false;
+}
+
+bool M590::authenticateAPN(const char * user, const char * pwd)
+{/* Authenticate to APN "AT+XGAUTH=1,1,”user”,”pwd" */
+    String parameter = "";
+    parameter += user;
+    parameter += "\",\"";
+    parameter += pwd;
+    parameter += "\"";
+
+    sendCommand(M590_COMMAND_GPRS_AUTHENTICATE, parameter);
+
+    if (readForResponseSync(M590_RESPONSE_OK, M590_RESPONSE_ERROR) == M590_RESPONSE_SUCCESS)
+        return true;
+    else
+        return false;
+}
+
+bool M590::connectToAPN()
+{/* Establish PPP link "AT+XIIC=1" */
+    sendCommand(M590_COMMAND_GPRS_CONNECT, "");
+
+    if (readForResponseSync(M590_RESPONSE_OK, M590_RESPONSE_ERROR) == M590_RESPONSE_SUCCESS)
+        return true;
+    else
+        return false;
+}
+
+bool M590::checkForIP(M590_IP_ResultType* resultptr)
+{/* Check for connection success "AT+XIIC?" */
+    sendCommand(M590_COMMAND_GPRS_CHECK_CONNECTION, "");
+
+    *resultptr = "";
+
+    if (readForResponseStringBufferedSync(M590_RESPONSE_OK, M590_RESPONSE_ERROR,resultptr) == M590_RESPONSE_SUCCESS)
+    {
+        /* Remove everything before the ip address*/
+        resultptr->remove(0, resultptr->indexOf(',') + 1);
+        resultptr->trim();
+        return true;
+    }
+    else
+        return false;
+}
+
+
+bool M590::dnsIpQuery(const char* host, M590_IP_ResultType* resultptr)
+{/* Request IP based on hostname"AT+DNS="host" " */
+    String parameter = "";
+    ResponseStateType response;
+
+    parameter += host;
+    parameter += "\"";
+    sendCommand(M590_COMMAND_GPRS_DNS, parameter);
+
+    *resultptr = "";
+    if (readForResponseStringBufferedSync(M590_RESPONSE_DNS_OK, M590_RESPONSE_DNS_ERROR, resultptr, 5000) == M590_RESPONSE_SUCCESS)
+    {
+        /* Remove everything before the ip address*/
+        resultptr->trim();
+        return true;
+    }
+    else
+    {
+        return false;
+    }
+}
 
 /* Synchronous Core functionality */
-
 
 ResponseStateType M590::readForResponseSync(const char *progmemResponseString, const char *progmemFailString, const unsigned int timeout)
 {
@@ -384,6 +611,64 @@ ResponseStateType M590::readForResponseBufferedSync(const char *progmemResponseS
                 }
             }
         }
+    //timeout reached
+    printDebug(M590_ERROR_RESPONSE_TIMEOUT);
+    return M590_RESPONSE_TIMEOUT;
+}
+
+ResponseStateType M590::readForResponseStringBufferedSync(const char *progmemResponseString, const char *progmemFailString, String* buffer, const unsigned int timeout)
+{
+    byte passMatched = 0, failMatched = 0;
+    byte passResponseLength = strlen_P(progmemResponseString);
+    byte failResponseLength = strlen_P(progmemFailString);
+    unsigned long startTime = millis();
+    byte readIp = 0;
+
+    MONITOR("<< ");
+    while (millis() < (startTime + timeout)) {
+        if (_gsmSerial->available()) {
+            char c = (char)_gsmSerial->read();
+            MONITOR(c);
+
+            if (c == ':')
+            {
+                readIp++;
+            }
+            else
+            {
+                /* Read only the first Ip */
+                if (readIp == 1)
+                {
+                    if (c == '\r')
+                        readIp++; //@Todo: better exit condition
+                    else
+                        *buffer += c;
+                }
+            }
+
+            //check for pass
+            if (c == pgm_read_byte_near(progmemResponseString + passMatched)) {
+                passMatched++;
+                if (passMatched == passResponseLength) {
+                    MONITOR("<< END");
+                    MONITOR_NL();
+                    return M590_RESPONSE_SUCCESS;
+                }
+            }
+            else
+                passMatched = 0;
+
+            //check for fail
+            if (c == pgm_read_byte_near(progmemFailString + failMatched)) {
+                failMatched++;
+                if (failMatched == failResponseLength) {
+                    return M590_RESPONSE_FAILURE;
+                }
+            }
+            else
+                failMatched = 0;
+        }
+    }
     //timeout reached
     printDebug(M590_ERROR_RESPONSE_TIMEOUT);
     return M590_RESPONSE_TIMEOUT;

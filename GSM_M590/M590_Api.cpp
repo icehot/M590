@@ -36,6 +36,8 @@ void M590::process()
             /* Assign the resultType and result pointer */
             _asyncResultType = c.resultType;
             _asyncResultptr = c.resultptr;
+            /* Assign the internal Cbk handler */
+            _internalCbk = c.internalCbk;
 
             /** Start the response reading by setting the M590_RESPONSE_RUNNING state for responshandler() **/
             _responseState = M590_RESPONSE_RUNNING;
@@ -290,97 +292,68 @@ bool M590::disableNewSMSNotification(void(*commandCbk)(ResponseStateType respons
         return false;
 }
 
-bool M590::attachGPRS(const char* apn, const char* user, const char* pwd, M590_IP_ResultType* resultptr, void(*commandCbk)(ResponseStateType response) = NULL)
-{
-    bool retVal= true;
-
-    /*1. Disconnect GPRS "AT+XIIC=0"*/
-
+bool M590::connect(const char *host, unsigned int port, void(*commandCbk)(ResponseStateType response))
+{/* At the first stage get the Ip address of the host*/
     CommandType c;
 
-    c.command = M590_COMMAND_GPRS_DISCONNECT;
+    c.command = M590_COMMAND_GPRS_DNS;
     c.parameter = "";
-    c.response = M590_RESPONSE_OK;
-    c.commandCbk = NULL;
-    c.resultType = M590_RES_NULL;
-
-    if (_commandFifo.add(c) == false )
-    {
-        retVal = false;
-    }
-
-    /*2. Set internal Protocol Stack "AT+XISP=0" */
-
-    c.command = M590_COMMAND_GPRS_INTERNAL_STACK;
-    c.parameter = "";
-    c.response = M590_RESPONSE_OK;
-    c.commandCbk = NULL;
-    c.resultType = M590_RES_NULL;
-
-    if (_commandFifo.add(c) == false)
-    {
-        retVal = false;
-    }
-
-    /*3. Set APN "AT+CGDCONT=1,"IP","apn" */
-
-    c.command = M590_COMMAND_GPRS_SET_APN;
-    c.parameter = "";
-    c.parameter += apn;
+    c.parameter += host;
     c.parameter += "\"";
-    c.response = M590_RESPONSE_OK;
+    c.response = M590_RESPONSE_DNS_OK;
     c.commandCbk = NULL;
-    c.resultType = M590_RES_NULL;
+    c.resultType = M590_RES_DNS;
+    _internalString = "";
+    c.resultptr = (void*)&_internalString;
+    c.timeout = DNS_TIMEOUT;
 
-    if (_commandFifo.add(c) == false)
+    /* Assign the next phase handler*/
+    c.internalCbk = &connectPhase2;
+
+    /* Save the port */
+    _asyncPort = port;
+
+    if (_commandFifo.add(c))
+        return true;
+    else
+        return false;
+}
+
+void M590::connectPhase2(ResponseStateType response)
+{/* DNS check completed */
+    CommandType c;
+
+    Serial.print("DNS Response: "); Serial.println(response);
+    Serial.print("IP: "); Serial.println(_internalString);
+
+    if (response == M590_RESPONSE_SUCCESS)
     {
-        retVal = false;
+        c.command = M590_COMMAND_GPRS_TCPSETUP;
+        c.parameter = "";
+        c.parameter += 0; //@Todo: Link 0 or 1
+        c.parameter += ",";
+        c.parameter += _internalString;
+        //c.parameter += "/json";
+        c.parameter += ",";
+        c.parameter += 80;// _asyncPort;
+        c.response = M590_RESPONSE_TCP0_OK;
+        c.commandCbk = NULL;
+        c.resultType = M590_RES_NULL;
+        c.timeout = TCP_TIMEOUT;
+
+        /* Assign the next phase handler*/
+        c.internalCbk = &connectPhase3;
+
+        if (_commandFifo.add(c) == false )
+            printDebug(M590_ERROR_FIFO_FULL);
     }
-
-    /*4. Authenticate to APN "AT+XGAUTH=1,1,”user”,”pwd" */
-
-    if (!user) user = "";
-    if (!pwd)  pwd = "";
-
-    c.command = M590_COMMAND_GPRS_AUTHENTICATE;
-    c.parameter = "";
-    c.parameter += user;
-    c.parameter += "\",\"";
-    c.parameter += pwd;
-    c.parameter += "\"";
-    c.response = M590_RESPONSE_OK;
-    c.commandCbk = NULL;
-    c.resultType = M590_RES_NULL;
-
-    if (_commandFifo.add(c) == false)
+    else
     {
-        retVal = false;
+        printDebug(M590_ERROR_GPRS_DNS_ERROR);
     }
+}
 
-    /* 5. Establish PPP link "AT+XIIC=1" */
-    c.command = M590_COMMAND_GPRS_CONNECT;
-    c.parameter = "";
-    c.response = M590_RESPONSE_OK;
-    c.commandCbk = NULL;
-    c.resultType = M590_RES_NULL;
-
-    if (_commandFifo.add(c) == false)
-    {
-        retVal = false;
-    }
-
-    /* 6. Check for connection success "AT+XIIC?" */
-    c.command = M590_COMMAND_GPRS_CHECK_CONNECTION;
-    c.parameter = "";
-    c.response = M590_RESPONSE_OK;
-    c.commandCbk = commandCbk;
-    c.resultType = M590_RES_XIIC;
-    c.resultptr = (void*)resultptr;
-
-    if (_commandFifo.add(c) == false)
-    {
-        retVal = false;
-    }
-
-    return retVal;
+void M590::connectPhase3(ResponseStateType response)
+{/* TCPSetup Result */
+    Serial.print("TCP Setup: "); Serial.println(response);
 }

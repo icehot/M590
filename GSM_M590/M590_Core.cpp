@@ -56,6 +56,10 @@ void M590::responseHandler()
 
         case M590_RESPONSE_FAILURE:
             printDebug(M590_ERROR_RESPONSE_ERROR);
+            if (_internalCbk != NULL)
+            {
+                (this->*_internalCbk)(M590_RESPONSE_FAILURE);
+            }
             if (_asyncCommandCbk != NULL)
             {
                 _asyncCommandCbk(M590_RESPONSE_FAILURE);
@@ -65,6 +69,10 @@ void M590::responseHandler()
 
         case M590_RESPONSE_TIMEOUT:
             printDebug(M590_ERROR_RESPONSE_TIMEOUT);
+            if (_internalCbk != NULL)
+            {
+                (this->*_internalCbk)(M590_RESPONSE_TIMEOUT);
+            }
             if (_asyncCommandCbk != NULL)
             {
                 _asyncCommandCbk(M590_RESPONSE_TIMEOUT);
@@ -74,6 +82,10 @@ void M590::responseHandler()
 
         case M590_RESPONSE_LENGTH_EXCEEDED:
             printDebug(M590_ERROR_RESPONSE_LENGTH_EXCEEDED);
+            if (_internalCbk != NULL)
+            {
+                (this->*_internalCbk)(M590_RESPONSE_LENGTH_EXCEEDED);
+            }
             if (_asyncCommandCbk != NULL)
             {
                 _asyncCommandCbk(M590_RESPONSE_LENGTH_EXCEEDED);
@@ -84,13 +96,15 @@ void M590::responseHandler()
         case M590_RESPONSE_SUCCESS:
             MONITOR("<< END");
             MONITOR_NL();
-
+            if (_internalCbk != NULL)
+            {
+                (this->*_internalCbk)(M590_RESPONSE_SUCCESS);
+            }
             if (_asyncCommandCbk != NULL)
             {
                 _asyncCommandCbk(M590_RESPONSE_SUCCESS);
             }
             _responseState = M590_RESPONSE_PREPARE_IDLE;
-
             break;
         
         case M590_RESPONSE_PREPARE_IDLE:
@@ -188,6 +202,10 @@ void M590::processResult(char c)
 
         case M590_RES_XIIC:
             processXIIC(c);
+        break;
+
+        case M590_RES_DNS:
+            processDNS(c);
         break;
 
         case M590_RES_NULL:
@@ -572,5 +590,36 @@ void M590::processXIIC(char c)
     default:
         printDebug(M590_ERROR_INVALID_STATE);
         break;
+    }
+}
+
+void M590::processDNS(char c)
+{
+    switch (_asyncProcessState)
+    {
+        case 0: /* Wait for separator */
+            if (c == ':')
+            {/* separator found go to next phase*/
+                _asyncProcessState = 1;
+            }
+            break;
+
+        case 1: /* Read until '\r' */
+            if (c == '\r')
+            {/* process and go to next phase*/
+                _asyncProcessState = 2;
+            }
+            else
+            {/* Add the character to the temp string */
+                *((String *)_asyncResultptr) += c;
+            }
+
+        case 2: /* Process completed */
+            /* Do nothing */
+            break;
+
+        default:
+            printDebug(M590_ERROR_INVALID_STATE);
+            break;
     }
 }

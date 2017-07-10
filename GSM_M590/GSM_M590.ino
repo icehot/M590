@@ -134,6 +134,62 @@ void settingsCbk(ResponseStateType response)
     }
 }
 
+void connectCbk0(ResponseStateType response)
+{/* TCPSetup Result */
+    if (response == M590_RESPONSE_SUCCESS)
+    {
+        Serial.println(F("#App: TCP Setup done"));
+
+        if (gsm.send(M590_GPRS_LINK_0, "GET /vshymanskyy/tinygsm/master/extras/logo.txt HTTP/1.0\r\nHost: cdn.rawgit.com\r\nConnection: close\r\n\r\n", &tcpSendCbk))
+        //if (gsm.send(M590_GPRS_LINK_0, "GET /vshymanskyy/tinygsm/master/extras/logo.txt HTTP/1.0\r\n\r\n", &tcpSendCbk))
+        {
+            Serial.println(F("#App: TCPSend started"));
+        }
+        else
+        {
+            Serial.println(F("#App: TCPSend Error"));
+        }
+    }
+    else
+    {
+        Serial.print(F("#App: TCPSETUP error: ")); Serial.println(response);
+    }
+}
+
+void connectCbk1(ResponseStateType response)
+{/* TCPSetup Result */
+    if (response == M590_RESPONSE_SUCCESS)
+    {
+        Serial.println(F("#App: TCP Setup done"));
+
+        if (gsm.send(M590_GPRS_LINK_1, "GET /index.htm HTTP/1.0\r\n\r\n", &tcpSendCbk))
+        {
+            Serial.println(F("#App: TCPSend started"));
+        }
+        else
+        {
+            Serial.println(F("#App: TCPSend Error"));
+        }
+    }
+    else
+    {
+        Serial.print(F("#App: TCPSETUP error: ")); Serial.println(response);
+    }
+}
+
+
+void tcpSendCbk(ResponseStateType response)
+{/* TCPSetup Result */
+    if (response == M590_RESPONSE_SUCCESS)
+    {
+        Serial.println(F("#App: TCP Sent"));
+    }
+    else
+    {
+        Serial.print(F("#App: TCPSend error: ")); Serial.println(response);
+    }
+}
+
 void setup()
 {
     Serial.begin(115200);
@@ -149,7 +205,7 @@ void setup()
         Serial.println(F("#App: Serialdebug Failed"));
     }
 
-    if (gsm.init(115200, &Serial3, "0000"))//connect to M590 with 115200 baud, Serial3 uart port
+    if (gsm.init(115200, &Serial3, "0000"))//connect to M590 with 115200 baud, Serial3 uart port, PIN 0000
     {
         Serial.println(F("#App: Init Done"));
     }
@@ -175,11 +231,10 @@ void setup()
     else
     {
         Serial.println("App: GPRS attach failed");
+        while (1);
     }
 
-    
-
-
+  
     gsm.checkAlive(&aliveCbk);
     gsm.setSMSTextModeCharSetGSM(&settingsCbk);
     gsm.deleteSMS(0, M590_SMS_DEL_ALL, &deleteSMSCbk);
@@ -189,12 +244,19 @@ void setup()
     gsm.readSMSList(M590_SMS_ALL, &smsList, &readSMSListCbk);
     //gsm.sendSMS("+40745662769", "Hello World", &sendSmsCbk);
     //gsm.enableNewSMSNotification(&newSmsNotificationCbk, &newSmsNotificationEnableCbk);
-    gsm.connect("icehot.go.ro", 89);
-    gsm.checkAlive(&aliveCbk);
+    gsm.connect(M590_GPRS_LINK_0,"cdn.rawgit.com", 80, &connectCbk0);
+    //gsm.connect(M590_GPRS_LINK_1, "icehot.go.ro", 89, &connectCbk1);
 
+    gsm.checkAlive(&aliveCbk);
+    //gsm.disconnect(M590_GPRS_LINK_1);
 }
 
 void loop()
 {
   gsm.process();
+
+  if (gsm.available())
+  {
+      Serial.print(gsm.read());
+  }
 }

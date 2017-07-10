@@ -83,6 +83,145 @@ void M590::checkForNewSMS(char c)
     }
 }
 
+void M590::checkForTCPClose(char c)
+{
+    byte index;
+
+    if (_tcpCloseDetected)
+    {/*Get the index number */
+        if (c == ',')
+        {
+            index = (byte)_asyncTempString.toInt();
+
+            /* Reset SMS notification related variables */
+            _tcpCloseDetected = false;
+            _asyncTempString = "";
+
+            /* TCP Close Actions*/
+            if (index == 0)
+            {
+                _link0Open = false;
+                printDebug(M590_ERROR_GPRS_LINK0_CLOSED);
+            }
+            else if (index == 1)
+            {
+                _link1Open = false;
+                printDebug(M590_ERROR_GPRS_LINK1_CLOSED);
+            }
+            else
+            {
+                printDebug(M590_ERROR_GPRS_INVALID_LINK);
+            }
+        }
+        else
+        {
+            _asyncTempString += c;
+        }
+    }
+    else
+    {/* Wait for TCP Close */
+        if (c == pgm_read_byte_near(M590_RESPONSE_TCPCLOSE + _asyncTCPMatched))
+        {
+            _asyncTCPMatched++;
+
+            if (_asyncTCPMatched == strlen(M590_RESPONSE_TCPCLOSE))
+            {
+                /* Set the TCP Close flag */
+                _tcpCloseDetected = true;
+                /* Prepare the buffer for getting the index */
+                _asyncTempString = "";
+            }
+        }
+        else
+        {
+            _asyncTCPMatched = 0;
+        }
+    }
+}
+
+void M590::checkForTCPReceive(char c)
+{
+    if (_tcpReceiveDetected)
+    {/*Get the index number */
+
+        switch (_asyncReceiveState)
+        {
+            case 0: /* Get link number 0/1 */
+                if (c == ',')
+                {
+                    _asyncLink = (byte)_asyncTempString.toInt();
+
+                    /* Go to next phase */
+                    _asyncReceiveState++;
+                    _asyncTempString = "";
+                }
+                else
+                {
+                    _asyncTempString += c;
+                }
+            break;
+
+            case 1: /* Get number of bytes */
+                if (c == ',')
+                {
+                    _asyncNrOfRecvBytes = _asyncTempString.toInt();
+
+                    /* Go to next phase */
+                    _asyncReceiveState++;
+                    _asyncTempString = "";
+                }
+                else
+                {
+                    _asyncTempString += c;
+                }
+            break;
+
+            case 2: /* Wait for number of bytes to be received */
+                if (_asyncNrOfRecvBytes > 0)
+                {
+                    _receive0Fifo.add(c);
+                    _asyncNrOfRecvBytes--;
+                }
+                else
+                {
+                    /* Go to next phase */
+                    _asyncReceiveState++;
+
+                }
+                break;
+
+            case 3: /* Process completed */
+                _tcpReceiveDetected = false;
+                /* Do nothing */
+                break;
+
+            default:
+                printDebug(M590_ERROR_INVALID_STATE);
+                break;
+        }
+    }
+    else
+    {/* Wait for TCP Receive */
+        if (c == pgm_read_byte_near(M590_RESPONSE_TCPRECV + _asyncTCPReceiveMatched))
+        {
+            _asyncTCPReceiveMatched++;
+
+            if (_asyncTCPReceiveMatched == strlen(M590_RESPONSE_TCPRECV))
+            {
+                /* Set the TCP Close flag */
+                _tcpReceiveDetected = true;
+                _asyncReceiveState = 0;
+                /* Prepare the buffer for getting the index */
+                _asyncTempString = "";
+            }
+        }
+        else
+        {
+            _asyncTCPReceiveMatched = 0;
+        }
+    }
+}
+
 void M590::gatewayHandler()
 {
     char c;
@@ -105,5 +244,44 @@ void M590::gatewayHandler()
         while (_debugSerial->available() > 0) {
             _gsmSerial->write(_debugSerial->read());
         }
+    }
+}
+
+void M590::idleHandler()
+{
+    char c;
+
+    if (_gsmSerial)
+    {
+        while (_gsmSerial->available() > 0)
+        {
+            c = _gsmSerial->read();
+
+            /* GSM to DEBUG */
+            //if (_debugSerial)
+            //    _debugSerial->write(c);
+            
+            /* SMS notification check */
+            if (_smsNotificationEnabled)
+            {
+                checkForNewSMS(c);
+            }
+
+            /* Check for incoming bytes */
+
+            checkForTCPReceive(c);
+
+            checkForTCPClose(c);
+        }
+
+        /* DEBUG to GSM */
+        if (_debugSerial)
+        {
+            while (_debugSerial->available() > 0) 
+            {
+                _gsmSerial->write(_debugSerial->read());
+            }
+        }
+
     }
 }

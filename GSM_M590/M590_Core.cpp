@@ -21,6 +21,8 @@ void M590::resetAsyncVariables() {
     _asyncResultptr = NULL;
     _asyncProcessState = 0;
     _asyncTempString = "";
+    _asyncCommandCbk = NULL;
+    _asyncInternalCbk = NULL;
 }
 
 void M590::sendCommand(const char *progmemCommand, String params) 
@@ -56,9 +58,9 @@ void M590::responseHandler()
 
         case M590_RESPONSE_FAILURE:
             printDebug(M590_ERROR_RESPONSE_ERROR);
-            if (_internalCbk != NULL)
+            if (_asyncInternalCbk != NULL)
             {
-                (this->*_internalCbk)(M590_RESPONSE_FAILURE);
+                (this->*_asyncInternalCbk)(M590_RESPONSE_FAILURE);
             }
             if (_asyncCommandCbk != NULL)
             {
@@ -69,9 +71,9 @@ void M590::responseHandler()
 
         case M590_RESPONSE_TIMEOUT:
             printDebug(M590_ERROR_RESPONSE_TIMEOUT);
-            if (_internalCbk != NULL)
+            if (_asyncInternalCbk != NULL)
             {
-                (this->*_internalCbk)(M590_RESPONSE_TIMEOUT);
+                (this->*_asyncInternalCbk)(M590_RESPONSE_TIMEOUT);
             }
             if (_asyncCommandCbk != NULL)
             {
@@ -82,9 +84,9 @@ void M590::responseHandler()
 
         case M590_RESPONSE_LENGTH_EXCEEDED:
             printDebug(M590_ERROR_RESPONSE_LENGTH_EXCEEDED);
-            if (_internalCbk != NULL)
+            if (_asyncInternalCbk != NULL)
             {
-                (this->*_internalCbk)(M590_RESPONSE_LENGTH_EXCEEDED);
+                (this->*_asyncInternalCbk)(M590_RESPONSE_LENGTH_EXCEEDED);
             }
             if (_asyncCommandCbk != NULL)
             {
@@ -96,9 +98,24 @@ void M590::responseHandler()
         case M590_RESPONSE_SUCCESS:
             MONITOR("<< END");
             MONITOR_NL();
-            if (_internalCbk != NULL)
+
+            /* Post handling fir some requests */
+            if (_asyncResultType == M590_RES_TCPSETUP0)
             {
-                (this->*_internalCbk)(M590_RESPONSE_SUCCESS);
+                _link0Open = true;
+            }
+            else if ((_asyncResultType == M590_RES_TCPSETUP1))
+            {
+                _link1Open = true;
+            }
+            else
+            {
+                /* Do nothing, other case */
+            }
+
+            if (_asyncInternalCbk != NULL)
+            {
+                (this->*_asyncInternalCbk)(M590_RESPONSE_SUCCESS);
             }
             if (_asyncCommandCbk != NULL)
             {
@@ -186,15 +203,15 @@ void M590::processResult(char c)
 
         case M590_RES_CMGR:
             processCMGR(c);
-            break;
+        break;
 
         case M590_RES_CMGL:
             processCMGL(c);
-            break;
+        break;
 
         case M590_RES_CMGS:
             processCMGS(c);
-            break;
+        break;
 
         case M590_RES_CSQ:
             processCSQ(c);
@@ -208,6 +225,14 @@ void M590::processResult(char c)
             processDNS(c);
         break;
 
+        case M590_RES_TCPSETUP0:
+        case M590_RES_TCPSETUP1:
+            /* Handling done in responseHandler()*/
+        break;
+
+        case M590_RES_TCPSEND:
+            processTCPSend(c);
+        break;
         case M590_RES_NULL:
             /* Nothing to process */
             break;
@@ -613,6 +638,7 @@ void M590::processDNS(char c)
             {/* Add the character to the temp string */
                 *((String *)_asyncResultptr) += c;
             }
+            break;
 
         case 2: /* Process completed */
             /* Do nothing */
@@ -621,5 +647,84 @@ void M590::processDNS(char c)
         default:
             printDebug(M590_ERROR_INVALID_STATE);
             break;
+    }
+}
+
+void M590::processTCPSetup(char c){
+
+    switch (_asyncProcessState)
+    {
+    case 0: /* Wait for separator */
+        if (c == ':')
+        {/* separator found go to next phase*/
+            _asyncProcessState = 1;
+            _internalString = "";
+        }
+        break;
+
+    case 1: /* Read until ',' */
+        if (c == ',')
+        {/* process and go to next phase*/
+            _asyncProcessState = 2;
+
+            if (_internalString.toInt() == 0)
+            {
+                _link0Open = true;
+                Serial.println("Link0 Open");
+            }
+            else if (_internalString.toInt() == 1)
+            {
+                _link1Open = true;
+                Serial.println("Link1 Open");
+            }
+            else
+            {
+                printDebug(M590_ERROR_GPRS_INVALID_LINK);
+            }
+        }
+        else
+        {/* Add the character to the temp string */
+            _internalString += c;
+        }
+        break;
+
+    case 2: /* Process completed */
+        /* Do nothing */
+        break;
+
+    default:
+        printDebug(M590_ERROR_INVALID_STATE);
+        break;
+    }
+
+}
+
+void M590::processTCPSend(char c)
+{
+    switch (_asyncProcessState)
+    {
+    case 0: /* Wait for '>' */
+        if (c == '>')
+        {/* Text input character match */
+
+            /* Send the request */
+            _gsmSerial->print((const char *)(_asyncResultptr));
+            MONITOR((const char *)(_asyncResultptr));
+
+            /* write terminating character (0x0D) to finalize the message */
+            _gsmSerial->write(0x0D);
+
+            /* Finish the process*/
+            _asyncProcessState++;
+        }
+        break;
+
+    case 1: /* Process completed */
+        /* Do nothing */
+        break;
+
+    default:
+        printDebug(M590_ERROR_INVALID_STATE);
+        break;
     }
 }

@@ -37,7 +37,7 @@ void M590::process()
             _asyncResultType = c.resultType;
             _asyncResultptr = c.resultptr;
             /* Assign the internal Cbk handler */
-            _internalCbk = c.internalCbk;
+            _asyncInternalCbk = c.internalCbk;
 
             /** Start the response reading by setting the M590_RESPONSE_RUNNING state for responshandler() **/
             _responseState = M590_RESPONSE_RUNNING;
@@ -46,7 +46,7 @@ void M590::process()
         }
         else
         {/* There is no job in the fifo, idle task can run */
-            gatewayHandler();
+            idleHandler();
         }
     }
     else
@@ -292,7 +292,7 @@ bool M590::disableNewSMSNotification(void(*commandCbk)(ResponseStateType respons
         return false;
 }
 
-bool M590::connect(const char *host, unsigned int port, void(*commandCbk)(ResponseStateType response))
+bool M590::connect(M590_GPRSLinkType link, const char *host, unsigned int port, void(*commandCbk)(ResponseStateType response))
 {/* At the first stage get the Ip address of the host*/
     CommandType c;
 
@@ -310,8 +310,10 @@ bool M590::connect(const char *host, unsigned int port, void(*commandCbk)(Respon
     /* Assign the next phase handler*/
     c.internalCbk = &connectPhase2;
 
-    /* Save the port */
-    _asyncPort = port;
+    /* Save the port and commandCbk for phase2 */
+    _savedPort = port;
+    _savedCommandCbk = commandCbk;
+    _savedLink = link;
 
     if (_commandFifo.add(c))
         return true;
@@ -323,26 +325,31 @@ void M590::connectPhase2(ResponseStateType response)
 {/* DNS check completed */
     CommandType c;
 
-    Serial.print("DNS Response: "); Serial.println(response);
-    Serial.print("IP: "); Serial.println(_internalString);
-
     if (response == M590_RESPONSE_SUCCESS)
     {
         c.command = M590_COMMAND_GPRS_TCPSETUP;
         c.parameter = "";
-        c.parameter += 0; //@Todo: Link 0 or 1
+        c.parameter += _savedLink;
         c.parameter += ",";
         c.parameter += _internalString;
-        //c.parameter += "/json";
         c.parameter += ",";
-        c.parameter += 80;// _asyncPort;
-        c.response = M590_RESPONSE_TCP0_OK;
-        c.commandCbk = NULL;
-        c.resultType = M590_RES_NULL;
-        c.timeout = TCP_TIMEOUT;
+        c.parameter += _savedPort;
 
-        /* Assign the next phase handler*/
-        c.internalCbk = &connectPhase3;
+        if (_savedLink == M590_GPRS_LINK_0)
+        {
+            c.response = M590_RESPONSE_TCP0_OK;
+            c.resultType = M590_RES_TCPSETUP0;
+        }
+        else /* M590_GPRS_LINK_1 */
+        {
+            c.response = M590_RESPONSE_TCP1_OK;
+            c.resultType = M590_RES_TCPSETUP1;
+        }
+
+        c.commandCbk = _savedCommandCbk;
+
+        
+        c.timeout = TCP_TIMEOUT;
 
         if (_commandFifo.add(c) == false )
             printDebug(M590_ERROR_FIFO_FULL);
@@ -353,7 +360,68 @@ void M590::connectPhase2(ResponseStateType response)
     }
 }
 
-void M590::connectPhase3(ResponseStateType response)
-{/* TCPSetup Result */
-    Serial.print("TCP Setup: "); Serial.println(response);
+bool M590::disconnect(M590_GPRSLinkType link)
+{
+    CommandType c;
+
+    c.command = M590_COMMAND_GPRS_TCPCLOSE;
+    c.parameter = "";
+    c.parameter += link;
+    c.response = M590_RESPONSE_OK;
+
+    if (_commandFifo.add(c))
+        return true;
+    else
+        return false;
+}
+
+bool M590::send(M590_GPRSLinkType link, const char * buffer, void(*commandCbk)(ResponseStateType response))
+{
+    CommandType c;
+
+    if ((_link0Open) || (_link1Open))
+    {
+        c.command = M590_COMMAND_GPRS_TCPSEND;
+        c.parameter = "";
+        c.parameter += link;
+        c.parameter += ",";
+        c.parameter += strlen(buffer);
+        c.resultptr = (void*)buffer;
+        c.resultType = M590_RES_TCPSEND;
+
+        if (link == M590_GPRS_LINK_0)
+        {
+            c.response = M590_RESPONSE_TCP0_SEND;
+        }
+        else
+        {
+            c.response = M590_RESPONSE_TCP1_SEND;
+        }
+
+        if (_commandFifo.add(c))
+            return true;
+        else
+            return false;
+    }
+    else
+    {
+        Serial.println("No Link open");
+        return false;
+    }
+}
+
+bool M590::available()
+{
+    return !(_receive0Fifo.isEmpty());
+}
+
+char M590::read()
+{
+    char c = 0;
+
+    if (!_receive0Fifo.isEmpty())
+        _receive0Fifo.remove(&c);
+
+    return c;
+
 }

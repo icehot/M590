@@ -231,6 +231,15 @@ class M590
         void* resultptr = NULL;
     }CommandType;
 
+    typedef struct {
+        Fifo<char> receiveFifo;
+        bool connected = false;
+        unsigned int port = 0;
+        String ip = "";
+        void(*_connectCbk)(ResponseStateType response) = NULL;
+        void(*_disconnectCbk)(ResponseStateType response) = NULL;
+    }SocketType;
+
     public:
         /* Constructor */
         M590();
@@ -239,15 +248,6 @@ class M590
         bool enableDebugSerial(HardwareSerial *debugSerial);
         bool init(unsigned long baudRate, HardwareSerial *gsmSerial, char* pin = "");
         bool waitForNetWork(const unsigned int timeout = SEARCH_FOR_NETWORK_TIMEOUT);
-
-        /* GPRS initialization */
-        bool detachGPRS();
-        bool attachGPRS(const char* apn, const char* user, const char* pwd, M590_IP_ResultType* resultptr);
-        bool connect(M590_GPRSLinkType link,const char *host, unsigned int port, void(*commandCbk)(ResponseStateType response) = NULL);
-        bool disconnect(M590_GPRSLinkType link);
-        bool send(M590_GPRSLinkType link, const char * buffer, void(*commandCbk)(ResponseStateType response) = NULL);
-        bool available();
-        char read();
 
         /* Public API-s */
         void process();
@@ -262,6 +262,16 @@ class M590
         bool enableNewSMSNotification(void(*newSMSnotificationCbk)(byte index), void(*commandCbk)(ResponseStateType response) = NULL);
         bool disableNewSMSNotification(void(*commandCbk)(ResponseStateType response) = NULL);
 
+        /* GPRS initialization */
+        bool detachGPRS();
+        bool attachGPRS(const char* apn, const char* user, const char* pwd, M590_IP_ResultType* resultptr);
+        GprsStateType M590::readyGPRS();
+        /* Client */
+        bool connect(M590_GPRSLinkType link, const char *host, unsigned int port, void(*connectCbk)(ResponseStateType response) = NULL, void(*disconnectCbk)(ResponseStateType response) = NULL);
+        bool disconnect(M590_GPRSLinkType link, void(*commandCbk)(ResponseStateType response) = NULL);
+        bool send(M590_GPRSLinkType link, const char * buffer, void(*commandCbk)(ResponseStateType response) = NULL);
+        bool available(M590_GPRSLinkType link);
+        char read(M590_GPRSLinkType link);
 
     private:
         /* Serial port handlers */
@@ -270,8 +280,6 @@ class M590
 
         /* Internal storage variables */
         Fifo<CommandType> _commandFifo;
-        Fifo<char> _receive0Fifo;
-        Fifo<char> _receive1Fifo;
 
         char _internalBuffer[16];
         String _internalString = "";
@@ -283,11 +291,6 @@ class M590
         ResponseStateType _responseState = M590_RESPONSE_IDLE;
         bool _smsNotificationEnabled = false;
         bool _newSMSArrived = false;
-        bool _tcpCloseDetected = false;
-        bool _tcpReceiveDetected = false;
-        bool _link0Open = false;
-        bool _link1Open = false;
-        GprsStateType _gprsState = M590_GPRS_DISCONNECTED;
 
         /* Internal variables for asynchronous response handling */
         unsigned long _asyncStartTime = 0;
@@ -297,12 +300,7 @@ class M590
         byte _asyncBytesMatched = 0;
         byte _asyncFailMatched = 0;
         byte _asyncSMSMatched = 0;
-        byte _asyncTCPMatched = 0;
-        byte _asyncTCPReceiveMatched = 0;
         byte _asyncProcessState = 0;
-        byte _asyncReceiveState = 0;
-        unsigned int _asyncNrOfRecvBytes = 0;
-        byte _asyncLink = 0;
         String _asyncTempString = "";
         void (*_asyncCommandCbk)(ResponseStateType response) = NULL;
         void (*_newSMSnotificationCbk)(byte index) = NULL;
@@ -310,9 +308,16 @@ class M590
         void *_asyncResultptr = NULL;
         void (M590::*_asyncInternalCbk)(ResponseStateType response) = NULL;
         
-        unsigned int _savedPort = 0;
-        void(*_savedCommandCbk)(ResponseStateType response) = NULL;
-        M590_GPRSLinkType _savedLink = M590_GPRS_LINK_0;
+        /* GPRS related variables*/
+        SocketType _socket[2];
+        GprsStateType _gprsState = M590_GPRS_DISCONNECTED;
+        bool _tcpCloseDetected = false;
+        bool _tcpReceiveDetected = false;
+        byte _asyncTCPCloseMatched = 0;
+        byte _asyncTCPReceiveMatched = 0;
+        byte _asyncReceiveState = 0;
+        unsigned int _asyncNrOfRecvBytes = 0;
+        byte _asyncLink = 0;
 
         /* Internal core functions*/
         void resetAsyncVariables();
@@ -322,7 +327,15 @@ class M590
         void processResult(char c);
         void idleHandler();
 
-        void connectPhase2(ResponseStateType response);
+        /* GPRS related functions */
+        void tcpSetup0(ResponseStateType response);
+        void tcpSetup1(ResponseStateType response);
+        void checkForTCPClose(char c);
+        void checkForTCPReceive(char c);
+        void processXIIC(char c);
+        void processDNS(char c);
+        void processTCPSetup(char c);
+        void processTCPSend(char c);
 
         /* Internal  handler functions for different results */
         void processCSQ(char c);
@@ -330,18 +343,12 @@ class M590
         void processCMGR(char c);
         void processCMGL(char c);
         void processCMGS(char c);
-        void processXIIC(char c);
-        void processDNS(char c);
-        void processTCPSetup(char c);
-        void processTCPSend(char c);
 
         /* Internal utility functions */
         void printDebug(const char *progmemString, bool withNewline = true);
         void printDebug(const String s, bool withNewline = true );
         void gatewayHandler();
         void checkForNewSMS(char c);
-        void checkForTCPClose(char c);
-        void checkForTCPReceive(char c);
 
         /* Init related synchronous interfaces */
         bool isAlive();
@@ -354,6 +361,7 @@ class M590
         ResponseStateType readForResponseSync(const char *progmemResponseString, const char *progmemFailString, const unsigned int timeout = COMMAND_TIMEOUT);
         bool bufferStartsWithProgmem(char *buffer, const char *progmemString);
 
+        /* GPRS initialization related interfaces */
         bool setInternalStack();
         bool setAPN(const char * apn);
         bool authenticateAPN(const char * user, const char * pwd);

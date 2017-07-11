@@ -292,7 +292,7 @@ bool M590::disableNewSMSNotification(void(*commandCbk)(ResponseStateType respons
         return false;
 }
 
-bool M590::connect(M590_GPRSLinkType link, const char *host, unsigned int port, void(*commandCbk)(ResponseStateType response))
+bool M590::connect(M590_GPRSLinkType link, const char *host, unsigned int port, void(*connectCbk)(ResponseStateType response) = NULL, void(*disconnectCbk)(ResponseStateType response) = NULL)
 {/* At the first stage get the Ip address of the host*/
     CommandType c;
 
@@ -303,17 +303,22 @@ bool M590::connect(M590_GPRSLinkType link, const char *host, unsigned int port, 
     c.response = M590_RESPONSE_DNS_OK;
     c.commandCbk = NULL;
     c.resultType = M590_RES_DNS;
-    _internalString = "";
-    c.resultptr = (void*)&_internalString;
+    _socket[link].ip = "";
+    c.resultptr = (void*)&_socket[link].ip;
     c.timeout = DNS_TIMEOUT;
 
-    /* Assign the next phase handler*/
-    c.internalCbk = &connectPhase2;
-
     /* Save the port and commandCbk for phase2 */
-    _savedPort = port;
-    _savedCommandCbk = commandCbk;
-    _savedLink = link;
+    _socket[link].port = port;
+    _socket[link]._connectCbk = connectCbk;
+    _socket[link]._disconnectCbk = disconnectCbk;
+
+    /* Assign the next phase handler*/
+    if (link == M590_GPRS_LINK_0)
+        c.internalCbk = &tcpSetup0;
+    else if (link == M590_GPRS_LINK_1)
+        c.internalCbk = &tcpSetup1;
+    else
+        printDebug(M590_ERROR_GPRS_INVALID_LINK);
 
     if (_commandFifo.add(c))
         return true;
@@ -321,7 +326,7 @@ bool M590::connect(M590_GPRSLinkType link, const char *host, unsigned int port, 
         return false;
 }
 
-void M590::connectPhase2(ResponseStateType response)
+void M590::tcpSetup0(ResponseStateType response)
 {/* DNS check completed */
     CommandType c;
 
@@ -329,29 +334,17 @@ void M590::connectPhase2(ResponseStateType response)
     {
         c.command = M590_COMMAND_GPRS_TCPSETUP;
         c.parameter = "";
-        c.parameter += _savedLink;
+        c.parameter += M590_GPRS_LINK_0;
         c.parameter += ",";
-        c.parameter += _internalString;
+        c.parameter += _socket[M590_GPRS_LINK_0].ip;
         c.parameter += ",";
-        c.parameter += _savedPort;
-
-        if (_savedLink == M590_GPRS_LINK_0)
-        {
-            c.response = M590_RESPONSE_TCP0_OK;
-            c.resultType = M590_RES_TCPSETUP0;
-        }
-        else /* M590_GPRS_LINK_1 */
-        {
-            c.response = M590_RESPONSE_TCP1_OK;
-            c.resultType = M590_RES_TCPSETUP1;
-        }
-
-        c.commandCbk = _savedCommandCbk;
-
-        
+        c.parameter += _socket[M590_GPRS_LINK_0].port;
+        c.response = M590_RESPONSE_TCP0_OK;
+        c.resultType = M590_RES_TCPSETUP0;
+        c.commandCbk = _socket[M590_GPRS_LINK_0]._connectCbk;
         c.timeout = TCP_TIMEOUT;
 
-        if (_commandFifo.add(c) == false )
+        if (_commandFifo.add(c) == false)
             printDebug(M590_ERROR_FIFO_FULL);
     }
     else
@@ -360,7 +353,34 @@ void M590::connectPhase2(ResponseStateType response)
     }
 }
 
-bool M590::disconnect(M590_GPRSLinkType link)
+void M590::tcpSetup1(ResponseStateType response)
+{/* DNS check completed */
+    CommandType c;
+
+    if (response == M590_RESPONSE_SUCCESS)
+    {
+        c.command = M590_COMMAND_GPRS_TCPSETUP;
+        c.parameter = "";
+        c.parameter += M590_GPRS_LINK_1;
+        c.parameter += ",";
+        c.parameter += _socket[M590_GPRS_LINK_1].ip;
+        c.parameter += ",";
+        c.parameter += _socket[M590_GPRS_LINK_1].port;
+        c.response = M590_RESPONSE_TCP1_OK;
+        c.resultType = M590_RES_TCPSETUP1;
+        c.commandCbk = _socket[M590_GPRS_LINK_1]._connectCbk;
+        c.timeout = TCP_TIMEOUT;
+
+        if (_commandFifo.add(c) == false)
+            printDebug(M590_ERROR_FIFO_FULL);
+    }
+    else
+    {
+        printDebug(M590_ERROR_GPRS_DNS_ERROR);
+    }
+}
+
+bool M590::disconnect(M590_GPRSLinkType link, void(*commandCbk)(ResponseStateType response) = NULL)
 {
     CommandType c;
 
@@ -368,6 +388,7 @@ bool M590::disconnect(M590_GPRSLinkType link)
     c.parameter = "";
     c.parameter += link;
     c.response = M590_RESPONSE_OK;
+    c.commandCbk = commandCbk;
 
     if (_commandFifo.add(c))
         return true;
@@ -379,7 +400,7 @@ bool M590::send(M590_GPRSLinkType link, const char * buffer, void(*commandCbk)(R
 {
     CommandType c;
 
-    if ((_link0Open) || (_link1Open))
+    if (_socket[link].connected == true)
     {
         c.command = M590_COMMAND_GPRS_TCPSEND;
         c.parameter = "";
@@ -405,23 +426,30 @@ bool M590::send(M590_GPRSLinkType link, const char * buffer, void(*commandCbk)(R
     }
     else
     {
-        Serial.println("No Link open");
+        if (link == 0)
+            printDebug(M590_ERROR_GPRS_LINK0_CLOSED);
+        else /* (link == 1) */
+            printDebug(M590_ERROR_GPRS_LINK1_CLOSED);
         return false;
     }
 }
 
-bool M590::available()
+bool M590::available(M590_GPRSLinkType link)
 {
-    return !(_receive0Fifo.isEmpty());
+    return !(_socket[link].receiveFifo.isEmpty());
 }
 
-char M590::read()
+char M590::read(M590_GPRSLinkType link)
 {
     char c = 0;
 
-    if (!_receive0Fifo.isEmpty())
-        _receive0Fifo.remove(&c);
+    if (!_socket[link].receiveFifo.isEmpty())
+        _socket[link].receiveFifo.remove(&c);
 
     return c;
+}
 
+GprsStateType M590::readyGPRS()
+{
+    return _gprsState;
 }

@@ -100,13 +100,19 @@ void M590::checkForTCPClose(char c)
             /* TCP Close Actions*/
             if (index == 0)
             {
-                _link0Open = false;
-                printDebug(M590_ERROR_GPRS_LINK0_CLOSED);
+                _socket[M590_GPRS_LINK_0].connected = false;
+                if (_socket[M590_GPRS_LINK_0]._disconnectCbk)
+                {
+                    _socket[M590_GPRS_LINK_0]._disconnectCbk(M590_RESPONSE_SUCCESS);
+                }
             }
             else if (index == 1)
             {
-                _link1Open = false;
-                printDebug(M590_ERROR_GPRS_LINK1_CLOSED);
+                _socket[M590_GPRS_LINK_1].connected = false;
+                if (_socket[M590_GPRS_LINK_1]._disconnectCbk)
+                {
+                    _socket[M590_GPRS_LINK_1]._disconnectCbk(M590_RESPONSE_SUCCESS);
+                }
             }
             else
             {
@@ -120,11 +126,11 @@ void M590::checkForTCPClose(char c)
     }
     else
     {/* Wait for TCP Close */
-        if (c == pgm_read_byte_near(M590_RESPONSE_TCPCLOSE + _asyncTCPMatched))
+        if (c == pgm_read_byte_near(M590_RESPONSE_TCPCLOSE + _asyncTCPCloseMatched))
         {
-            _asyncTCPMatched++;
+            _asyncTCPCloseMatched++;
 
-            if (_asyncTCPMatched == strlen(M590_RESPONSE_TCPCLOSE))
+            if (_asyncTCPCloseMatched == strlen(M590_RESPONSE_TCPCLOSE))
             {
                 /* Set the TCP Close flag */
                 _tcpCloseDetected = true;
@@ -134,7 +140,7 @@ void M590::checkForTCPClose(char c)
         }
         else
         {
-            _asyncTCPMatched = 0;
+            _asyncTCPCloseMatched = 0;
         }
     }
 }
@@ -151,9 +157,18 @@ void M590::checkForTCPReceive(char c)
                 {
                     _asyncLink = (byte)_asyncTempString.toInt();
 
-                    /* Go to next phase */
-                    _asyncReceiveState++;
-                    _asyncTempString = "";
+                    if (_asyncLink >= M590_GPRS_LINK_0 && _asyncLink <= M590_GPRS_LINK_1)
+                    {
+                        /* Go to next phase */
+                        _asyncReceiveState++;
+                        _asyncTempString = "";
+                    }
+                    else
+                    {/* Invalid link */
+                        _asyncReceiveState = 0;
+                        _tcpReceiveDetected = false;
+                        printDebug(M590_ERROR_GPRS_INVALID_LINK);
+                    }
                 }
                 else
                 {
@@ -179,7 +194,7 @@ void M590::checkForTCPReceive(char c)
             case 2: /* Wait for number of bytes to be received */
                 if (_asyncNrOfRecvBytes > 0)
                 {
-                    _receive0Fifo.add(c);
+                    _socket[_asyncLink].receiveFifo.add(c);
                     _asyncNrOfRecvBytes--;
                 }
                 else

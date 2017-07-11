@@ -99,14 +99,14 @@ void M590::responseHandler()
             MONITOR("<< END");
             MONITOR_NL();
 
-            /* Post handling fir some requests */
+            /* Post handling for some requests */
             if (_asyncResultType == M590_RES_TCPSETUP0)
             {
-                _link0Open = true;
+                _socket[M590_GPRS_LINK_0].connected = true;
             }
             else if ((_asyncResultType == M590_RES_TCPSETUP1))
             {
-                _link1Open = true;
+                _socket[M590_GPRS_LINK_1].connected = true;
             }
             else
             {
@@ -669,13 +669,11 @@ void M590::processTCPSetup(char c){
 
             if (_internalString.toInt() == 0)
             {
-                _link0Open = true;
-                Serial.println("Link0 Open");
+                _socket[M590_GPRS_LINK_0].connected = true;
             }
             else if (_internalString.toInt() == 1)
             {
-                _link1Open = true;
-                Serial.println("Link1 Open");
+                _socket[M590_GPRS_LINK_1].connected = true;
             }
             else
             {

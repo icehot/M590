@@ -138,44 +138,55 @@ void connectCbk0(ResponseStateType response)
 {/* TCPSetup Result */
     if (response == M590_RESPONSE_SUCCESS)
     {
-        Serial.println(F("#App: TCP Setup done"));
+        Serial.println(F("#App: TCP0 Setup done"));
 
         if (gsm.send(M590_GPRS_LINK_0, "GET /vshymanskyy/tinygsm/master/extras/logo.txt HTTP/1.0\r\nHost: cdn.rawgit.com\r\nConnection: close\r\n\r\n", &tcpSendCbk))
         //if (gsm.send(M590_GPRS_LINK_0, "GET /vshymanskyy/tinygsm/master/extras/logo.txt HTTP/1.0\r\n\r\n", &tcpSendCbk))
         {
-            Serial.println(F("#App: TCPSend started"));
+            Serial.println(F("#App: TCP0 Send started"));
         }
         else
         {
-            Serial.println(F("#App: TCPSend Error"));
+            Serial.println(F("#App: TCP0 Send Error"));
         }
     }
     else
     {
-        Serial.print(F("#App: TCPSETUP error: ")); Serial.println(response);
+        Serial.print(F("#App: TCPSETUP0 error: ")); Serial.println(response);
     }
+}
+
+void disconnectCbk0(ResponseStateType response)
+{
+    Serial.println(F("\n\n #App: Link 0 Closed \n\n"));
 }
 
 void connectCbk1(ResponseStateType response)
 {/* TCPSetup Result */
     if (response == M590_RESPONSE_SUCCESS)
     {
-        Serial.println(F("#App: TCP Setup done"));
+        Serial.println(F("#App: TCP1 Setup done"));
 
         if (gsm.send(M590_GPRS_LINK_1, "GET /index.htm HTTP/1.0\r\n\r\n", &tcpSendCbk))
         {
-            Serial.println(F("#App: TCPSend started"));
+            Serial.println(F("#App: TCP1 Send started"));
         }
         else
         {
-            Serial.println(F("#App: TCPSend Error"));
+            Serial.println(F("#App: TCP1 Send Error"));
         }
     }
     else
     {
-        Serial.print(F("#App: TCPSETUP error: ")); Serial.println(response);
+        Serial.print(F("#App: TCPSETUP1 error: ")); Serial.println(response);
     }
 }
+
+void disconnectCbk1(ResponseStateType response)
+{
+    Serial.println(F("\n\n#App: Link 1 Closed\n\n"));
+}
+
 
 
 void tcpSendCbk(ResponseStateType response)
@@ -243,20 +254,25 @@ void setup()
     //gsm.readSMS(1, &sms, &readSMSCbk);
     gsm.readSMSList(M590_SMS_ALL, &smsList, &readSMSListCbk);
     //gsm.sendSMS("+40745662769", "Hello World", &sendSmsCbk);
-    //gsm.enableNewSMSNotification(&newSmsNotificationCbk, &newSmsNotificationEnableCbk);
-    gsm.connect(M590_GPRS_LINK_0,"cdn.rawgit.com", 80, &connectCbk0);
-    //gsm.connect(M590_GPRS_LINK_1, "icehot.go.ro", 89, &connectCbk1);
+    gsm.enableNewSMSNotification(&newSmsNotificationCbk, &newSmsNotificationEnableCbk);
+    gsm.connect(M590_GPRS_LINK_0, "cdn.rawgit.com", 80, &connectCbk0, &disconnectCbk0);
+    gsm.connect(M590_GPRS_LINK_1, "icehot.go.ro", 80, &connectCbk1, &disconnectCbk1);
 
     gsm.checkAlive(&aliveCbk);
-    //gsm.disconnect(M590_GPRS_LINK_1);
+    gsm.disconnect(M590_GPRS_LINK_0, &disconnectCbk0);
 }
 
 void loop()
 {
   gsm.process();
 
-  if (gsm.available())
+  if (gsm.available(M590_GPRS_LINK_0))
   {
-      Serial.print(gsm.read());
+      Serial.print(gsm.read(M590_GPRS_LINK_0));
+  }
+
+  if (gsm.available(M590_GPRS_LINK_1))
+  {
+      Serial.print(gsm.read(M590_GPRS_LINK_1));
   }
 }

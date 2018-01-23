@@ -23,6 +23,13 @@ void newSmsNotificationEnableCbk(ResponseStateType response)
 void newSmsNotificationCbk(byte index)
 {
     Serial.println("\nNew SMS arrived!");
+    /* Initialize sms buffer */
+
+    sms.date = "";
+    sms.sender = "";
+    sms.status = "";
+    sms.text = "";
+
     gsm.readSMS(index, &sms, &readSMSCbk);
 }
 
@@ -234,7 +241,7 @@ void setup()
     {
         Serial.println(F("#App: Network Registration Failed"));
     }
-
+    /*
     if (gsm.attachGPRS("net", "", "", &ip))
     {
         Serial.print(F("#App: GPRS attached, obtained IP: ")); Serial.println(ip);
@@ -244,22 +251,23 @@ void setup()
         Serial.println("App: GPRS attach failed");
         while (1);
     }
+    */
 
   
     gsm.checkAlive(&aliveCbk);
     gsm.setSMSTextModeCharSetGSM(&settingsCbk);
     gsm.deleteSMS(0, M590_SMS_DEL_ALL, &deleteSMSCbk);
-    //gsm.sendUSSD("*133#", &ussd, &ussdCbk);
+    gsm.sendUSSD("*133#", &ussd, &ussdCbk);
     gsm.getSignalStrength(&sq, &sqCbk);
     //gsm.readSMS(1, &sms, &readSMSCbk);
     gsm.readSMSList(M590_SMS_ALL, &smsList, &readSMSListCbk);
     //gsm.sendSMS("+40745662769", "Hello World", &sendSmsCbk);
     gsm.enableNewSMSNotification(&newSmsNotificationCbk, &newSmsNotificationEnableCbk);
-    gsm.connect(M590_GPRS_LINK_0, "cdn.rawgit.com", 80, &connectCbk0, &disconnectCbk0);
-    gsm.connect(M590_GPRS_LINK_1, "icehot.go.ro", 80, &connectCbk1, &disconnectCbk1);
+    //gsm.connect(M590_GPRS_LINK_0, "cdn.rawgit.com", 80, &connectCbk0, &disconnectCbk0);
+    //gsm.connect(M590_GPRS_LINK_1, "icehot.go.ro", 80, &connectCbk1, &disconnectCbk1);
 
     gsm.checkAlive(&aliveCbk);
-    gsm.disconnect(M590_GPRS_LINK_0, &disconnectCbk0);
+    //gsm.disconnect(M590_GPRS_LINK_0, &disconnectCbk0);
 }
 
 void loop()

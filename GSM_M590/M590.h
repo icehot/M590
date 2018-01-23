@@ -10,7 +10,7 @@
 #endif
 
 #include "Fifo.h"
-//#define MONITOR_M590
+#define MONITOR_M590
 
 #ifdef MONITOR_M590
 #define MONITOR(a) if(_debugSerial) _debugSerial->print(a);
